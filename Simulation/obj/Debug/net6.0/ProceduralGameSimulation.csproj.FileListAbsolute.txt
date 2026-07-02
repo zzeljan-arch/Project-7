@@ -1,0 +1,15 @@
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ProceduralGameSimulation.csproj.AssemblyReference.cache
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ProceduralGameSimulation.GeneratedMSBuildEditorConfig.editorconfig
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ProceduralGameSimulation.AssemblyInfoInputs.cache
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ProceduralGameSimulation.AssemblyInfo.cs
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ProceduralGameSimulation.csproj.CoreCompileInputs.cache
+F:\proceduralGame\Simulation\bin\Debug\net6.0\ProceduralGameSimulation.exe
+F:\proceduralGame\Simulation\bin\Debug\net6.0\ProceduralGameSimulation.deps.json
+F:\proceduralGame\Simulation\bin\Debug\net6.0\ProceduralGameSimulation.runtimeconfig.json
+F:\proceduralGame\Simulation\bin\Debug\net6.0\ProceduralGameSimulation.dll
+F:\proceduralGame\Simulation\bin\Debug\net6.0\ProceduralGameSimulation.pdb
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ProceduralGameSimulation.dll
+F:\proceduralGame\Simulation\obj\Debug\net6.0\refint\ProceduralGameSimulation.dll
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ProceduralGameSimulation.pdb
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ProceduralGameSimulation.genruntimeconfig.cache
+F:\proceduralGame\Simulation\obj\Debug\net6.0\ref\ProceduralGameSimulation.dll
