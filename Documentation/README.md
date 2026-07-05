@@ -21,7 +21,7 @@ dotnet run
 
 - `RegionState` - Represents a region's current tier and evolution path
 - `WorldCampaign` - Complete world state for one campaign
-- `EvolutionRules` - Encapsulates tier spreading and path assignment logic
+- `EvolutionRules` - Encapsulates action influence, path weighting, and path assignment logic
 - `DeterministicRandom` - Seedable RNG for reproducibility
 - `NoveltyTracker` - Analyzes variance across multiple campaigns
 
@@ -31,24 +31,15 @@ dotnet run
 
 Edit the paths in `WorldEvolution.cs` under `EvolutionRules.GetPathsForRegion()`.
 
-### Adjust Tier Spread Probabilities
+### Adjust Action Influence
 
-Edit `EvolutionRules.CalculateTierSpread()` to change how adjacent regions tier up:
-```csharp
-double probability = distance switch
-{
-    1 => 0.60, // Adjacent regions
-    2 => 0.35, // Two steps away
-    3 => 0.15,
-    _ => 0.05
-};
-```
+Edit `EvolutionRules` and `WorldCampaign.PerformPlayerAction()` to change how actions affect nearby regions and path selection.
 
 ### Run Custom Campaign
 
 ```csharp
 var campaign = new WorldCampaign(seed: 12345, startingRegion: RegionId.DarkForest);
-campaign.ClearRegion(RegionId.NorthernRealm);
+campaign.PerformPlayerAction(RegionId.NorthernRealm, PlayerAction.Defend);
 Console.WriteLine(campaign.ToString());
 ```
 

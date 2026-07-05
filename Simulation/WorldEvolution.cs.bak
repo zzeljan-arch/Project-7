@@ -1,0 +1,3592 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+namespace PG.World.Simulation
+{
+    public enum WorldTier
+    {
+        Tier1 = 1,
+        Tier2 = 2,
+        Tier3 = 3,
+        Tier4 = 4,
+        Tier5 = 5
+    }
+
+    public enum RegionId
+    {
+        NorthernRealm = 0,
+        DarkForest = 1,
+        DesertKingdom = 2,
+        Swamp = 3,
+        Highlands = 4,
+        InfernalLands = 5,
+        ArcaneEmpire = 6
+    }
+
+    public enum EvolutionPath
+    {
+        None = -1,
+        AgeOfRaiders = 0,
+        EternalWinter = 1,
+        Ragnarok = 2,
+        UndeadNorth = 3,
+        PrimordialJungle = 4,
+        CorruptedAbyss = 5,
+        ElvenEnclave = 6,
+        CursedWildlands = 7,
+        AgeOfMerchants = 8,
+        AgeOfPharaohs = 9,
+        ElementalCatastrophe = 10,
+        ShadowAndSecrets = 11,
+        PrimordialBog = 12,
+        PlaguePestilence = 13,
+        MonsterDominion = 14,
+        MysticalAwakening = 15,
+        DwarvenProsperity = 16,
+        AsceticHermitage = 17,
+        DragonRoost = 18,
+        CorruptionBlight = 19,
+        DemonicDominion = 20,
+        VolcanicCatastrophe = 21,
+        DemonicElementalFusion = 22,
+        EternalForge = 23,
+        ArcaneAscendance = 24,
+        KnowledgeHoarding = 25,
+        TechnoMagicalSynthesis = 26,
+        CorruptionDecay = 27
+    }
+
+    public enum PlayerAction
+    {
+        Explore,
+        Purify,
+        Raid,
+        Research,
+        Negotiate,
+        Corrupt,
+        Defend,
+        Rest,
+        Travel,
+        VisitTown,
+        VisitMarketplace,
+        Inventory,
+        Character,
+        QuestLog,
+        ReadBook,
+        Fish,
+        Camp,
+        Craft,
+        Trade,
+        Help,
+        Investigate,
+        Steal,
+        Fight,
+        Leave
+    }
+
+    public enum PathTrait
+    {
+        War,
+        Magic,
+        Corruption,
+        Nature,
+        Trade,
+        Order,
+        Knowledge
+    }
+
+    public class ActionInfluence
+    {
+        public RegionId TargetRegion { get; init; }
+        public double TierChanceDelta { get; init; }
+        public double PathChangeChance { get; init; }
+        public PlayerAction SourceAction { get; init; }
+    }
+
+    public static class EvolutionRules
+    {
+        private static readonly Dictionary<RegionId, List<EvolutionPath>> RegionPaths = new()
+        {
+            { RegionId.NorthernRealm, new() { EvolutionPath.AgeOfRaiders, EvolutionPath.EternalWinter, EvolutionPath.Ragnarok, EvolutionPath.UndeadNorth } },
+            { RegionId.DarkForest, new() { EvolutionPath.PrimordialJungle, EvolutionPath.CorruptedAbyss, EvolutionPath.ElvenEnclave, EvolutionPath.CursedWildlands } },
+            { RegionId.DesertKingdom, new() { EvolutionPath.AgeOfMerchants, EvolutionPath.AgeOfPharaohs, EvolutionPath.ElementalCatastrophe, EvolutionPath.ShadowAndSecrets } },
+            { RegionId.Swamp, new() { EvolutionPath.PrimordialBog, EvolutionPath.PlaguePestilence, EvolutionPath.MonsterDominion, EvolutionPath.MysticalAwakening } },
+            { RegionId.Highlands, new() { EvolutionPath.DwarvenProsperity, EvolutionPath.AsceticHermitage, EvolutionPath.DragonRoost, EvolutionPath.CorruptionBlight } },
+            { RegionId.InfernalLands, new() { EvolutionPath.DemonicDominion, EvolutionPath.VolcanicCatastrophe, EvolutionPath.DemonicElementalFusion, EvolutionPath.EternalForge } },
+            { RegionId.ArcaneEmpire, new() { EvolutionPath.ArcaneAscendance, EvolutionPath.KnowledgeHoarding, EvolutionPath.TechnoMagicalSynthesis, EvolutionPath.CorruptionDecay } }
+        };
+
+        private static readonly Dictionary<PlayerAction, (HashSet<PathTrait> Favor, HashSet<PathTrait> Disfavor)> ActionTraits = new()
+        {
+            { PlayerAction.Purify, (new() { PathTrait.Nature, PathTrait.Order }, new() { PathTrait.Corruption }) },
+            { PlayerAction.Raid, (new() { PathTrait.War, PathTrait.Corruption }, new() { PathTrait.Knowledge }) },
+            { PlayerAction.Research, (new() { PathTrait.Knowledge, PathTrait.Magic }, new() { PathTrait.War }) },
+            { PlayerAction.Negotiate, (new() { PathTrait.Trade, PathTrait.Order }, new() { PathTrait.Corruption }) },
+            { PlayerAction.Corrupt, (new() { PathTrait.Corruption, PathTrait.Magic }, new() { PathTrait.Order }) },
+            { PlayerAction.Explore, (new() { PathTrait.Nature, PathTrait.Magic }, new() { PathTrait.Corruption }) },
+            { PlayerAction.Defend, (new() { PathTrait.Order, PathTrait.War }, new() { PathTrait.Corruption }) }
+        };
+
+        public static List<RegionId> GetAdjacentRegions(RegionId regionId)
+        {
+            return regionId switch
+            {
+                RegionId.NorthernRealm => new() { RegionId.DarkForest, RegionId.Highlands, RegionId.ArcaneEmpire },
+                RegionId.DarkForest => new() { RegionId.NorthernRealm, RegionId.Swamp, RegionId.ArcaneEmpire },
+                RegionId.DesertKingdom => new() { RegionId.Swamp, RegionId.Highlands, RegionId.InfernalLands },
+                RegionId.Swamp => new() { RegionId.DarkForest, RegionId.DesertKingdom, RegionId.Highlands },
+                RegionId.Highlands => new() { RegionId.NorthernRealm, RegionId.Swamp, RegionId.DesertKingdom, RegionId.InfernalLands },
+                RegionId.InfernalLands => new() { RegionId.Highlands, RegionId.DesertKingdom, RegionId.ArcaneEmpire },
+                RegionId.ArcaneEmpire => new() { RegionId.NorthernRealm, RegionId.DarkForest, RegionId.InfernalLands },
+                _ => new()
+            };
+        }
+
+        public static List<ActionInfluence> CalculateActionInfluence(RegionId sourceRegion, PlayerAction action)
+        {
+            var influences = new List<ActionInfluence>
+            {
+                new() { TargetRegion = sourceRegion, TierChanceDelta = 0.12, PathChangeChance = 0.35, SourceAction = action }
+            };
+
+            foreach (var neighbor in GetAdjacentRegions(sourceRegion))
+            {
+                influences.Add(new() { TargetRegion = neighbor, TierChanceDelta = 0.08, PathChangeChance = 0.20, SourceAction = action });
+            }
+
+            return influences;
+        }
+
+        public static List<EvolutionPath> GetPathsForRegion(RegionId regionId)
+        {
+            return RegionPaths.TryGetValue(regionId, out var paths) ? paths : new List<EvolutionPath>();
+        }
+
+        public static EvolutionPath ChooseWeightedPath(RegionId regionId, PlayerAction action, DeterministicRandom rng)
+        {
+            var weights = new Dictionary<EvolutionPath, int>();
+            var paths = RegionPaths[regionId];
+            var traits = ActionTraits.ContainsKey(action) ? ActionTraits[action] : (new HashSet<PathTrait>(), new HashSet<PathTrait>());
+
+            var (favorTraits, disfavorTraits) = traits;
+            foreach (var path in paths)
+            {
+                int weight = 10;
+                bool pathIsWar = path.ToString().Contains("Raid") || path.ToString().Contains("War");
+                bool pathIsMagic = path.ToString().Contains("Magic") || path.ToString().Contains("Arcane") || path.ToString().Contains("Mystical");
+                bool pathIsCorruption = path.ToString().Contains("Corrupt") || path.ToString().Contains("Shadow") || path.ToString().Contains("Demonic") || path.ToString().Contains("Decay");
+
+                if (favorTraits.Contains(PathTrait.War) && pathIsWar)
+                    weight += 10;
+                if (favorTraits.Contains(PathTrait.Magic) && pathIsMagic)
+                    weight += 10;
+                if (favorTraits.Contains(PathTrait.Corruption) && pathIsCorruption)
+                    weight += 10;
+                if (disfavorTraits.Contains(PathTrait.Corruption) && pathIsCorruption)
+                    weight -= 5;
+
+                weights[path] = Math.Max(1, weight);
+            }
+
+            int total = weights.Values.Sum();
+            int pick = rng.Next(total);
+            foreach (var kvp in weights)
+            {
+                if (pick < kvp.Value)
+                    return kvp.Key;
+                pick -= kvp.Value;
+            }
+
+            return paths.First();
+        }
+    }
+
+    public enum BiomeType
+    {
+        Plains,
+        Forest,
+        Desert,
+        Swamp,
+        Mountain,
+        Arcane,
+        Infernal
+    }
+
+    public enum LogCategory
+    {
+        Player,
+        Simulation
+    }
+
+    public enum FactionType
+    {
+        Merchants,
+        Rangers,
+        Bandits,
+        Mages,
+        Miners,
+        Clergy,
+        Nobles
+    }
+
+    public enum QuestStatus
+    {
+        Available,
+        OnQuest,
+        Completed,
+        Failed
+    }
+
+    public enum EncounterDifficulty
+    {
+        Normal,
+        Elite,
+        Rare
+    }
+
+    public enum ZoneEvolutionMilestone
+    {
+        None = 0,
+        Milestone1 = 1,  // 0-25%
+        Milestone2 = 2,  // 26-50%
+        Milestone3 = 3,  // 51-75%
+        Milestone4 = 4   // 76-100%
+    }
+
+    public class DeterministicRandom
+    {
+        private ulong _seed;
+        private const ulong A = 6364136223846793005UL;
+        private const ulong C = 1442695040888963407UL;
+
+        public DeterministicRandom(ulong seed = 0)
+        {
+            _seed = seed != 0 ? seed : (ulong)Environment.TickCount;
+        }
+
+        public int Next(int max)
+        {
+            if (max <= 0)
+                throw new ArgumentException("max must be positive");
+            _seed = A * _seed + C;
+            return (int)((_seed >> 33) % (uint)max);
+        }
+
+        public int Next(int min, int max)
+        {
+            if (min >= max)
+                throw new ArgumentException("min must be less than max");
+            return min + Next(max - min);
+        }
+
+        public bool Probability(double p)
+        {
+            if (p < 0 || p > 1)
+                throw new ArgumentException("Probability must be between 0 and 1");
+            return Next(10000) < (p * 10000);
+        }
+    }
+
+    public static class SimulationConfig
+    {
+        public const int CampaignRegionCount = 4;
+        public const double StartingTier2Chance = 0.40;
+        public const int ExploreMinutes = 120;
+        public const double EncounterChance = 0.35;
+        public const double EliteEncounterChance = 0.12;
+        public const double RareEncounterChance = 0.05;
+        public const int WorldUpdateTicksPerAction = 1;
+        public const int EvolutionCheckFrequency = 3;
+        public const double ProgressionDecayRate = 0.08;
+        public const double RestHealPerHour = 6.0;
+        public const int RestHours = 8;
+        public const double DefaultStartingGold = 80;
+        public const double MarketVolatility = 0.12;
+        public const int FastSimulationDefaultCampaigns = 1000;
+        public const int FastSimulationDefaultActions = 200;
+    }
+
+    public static class SimulationLog
+    {
+        private static readonly object LockObj = new object();
+
+        public static void Write(LogCategory category, string message)
+        {
+            lock (LockObj)
+            {
+                var original = Console.ForegroundColor;
+                Console.ForegroundColor = category == LogCategory.Player ? ConsoleColor.White : ConsoleColor.DarkGray;
+                string prefix = category == LogCategory.Player ? "[EVENT]" : "[SIM]";
+                Console.WriteLine($"{prefix} {message}");
+                Console.ForegroundColor = original;
+            }
+        }
+
+        public static void WriteBlank() => Console.WriteLine();
+    }
+
+    public class WorldClock
+    {
+        public int Day { get; private set; } = 1;
+        public int Hour { get; private set; } = 8;
+        public int Minute { get; private set; } = 0;
+
+        public void AdvanceMinutes(int minutes)
+        {
+            Minute += minutes;
+            Hour += Minute / 60;
+            Minute %= 60;
+            Day += Hour / 24;
+            Hour %= 24;
+        }
+
+        public string CurrentTime => $"Day {Day}, {Hour:D2}:{Minute:D2}";
+    }
+
+    public class ItemDefinition
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Category { get; set; }
+        public int BaseValue { get; set; }
+    }
+
+    public class ItemStack
+    {
+        public ItemDefinition Definition { get; set; }
+        public int Quantity { get; set; }
+
+        public ItemStack(ItemDefinition definition, int quantity)
+        {
+            Definition = definition;
+            Quantity = quantity;
+        }
+
+        public override string ToString() => $"{Quantity}x {Definition.Name}";
+    }
+
+    public class RegionDefinition
+    {
+        public RegionId RegionId { get; set; }
+        public string Name { get; set; }
+        public BiomeType Biome { get; set; }
+        public bool HasTown { get; set; }
+        public bool HasWater { get; set; }
+        public List<RegionId> AdjacentRegions { get; set; } = new();
+        public List<EvolutionPath> DefaultPaths { get; set; } = new();
+    }
+
+    public class RegionState
+    {
+        public RegionId RegionId { get; set; }
+        public WorldTier CurrentTier { get; set; }
+        public EvolutionPath CurrentPath { get; set; }
+        public EvolutionPath DefaultPath { get; set; }
+        public bool HasBeenVisited { get; set; }
+        public bool IsLocked { get; set; }
+        public Dictionary<string, ProgressionBarState> ProgressionBars { get; set; } = new();
+        public Dictionary<string, ZoneEvolutionBarState> ZoneEvolutionBars { get; set; } = new();
+        public Dictionary<string, EventBarState> EventBars { get; set; } = new();
+        public Dictionary<string, SettlementState> Settlements { get; set; } = new();
+        public RegionDefinition Definition { get; set; }
+
+        public RegionState(RegionDefinition definition, WorldTier tier, EvolutionPath defaultPath)
+        {
+            Definition = definition;
+            RegionId = definition.RegionId;
+            CurrentTier = tier;
+            DefaultPath = defaultPath;
+            CurrentPath = defaultPath;
+        }
+
+        public RegionState(RegionId regionId, WorldTier tier, EvolutionPath defaultPath)
+            : this(WorldDefinitions.GetDefinition(regionId), tier, defaultPath)
+        {
+        }
+
+        public override string ToString()
+        {
+            if (CurrentPath == EvolutionPath.None)
+                return $"{Definition.Name} (Tier {(int)CurrentTier})";
+            return $"{Definition.Name} - {CurrentPath} (Tier {(int)CurrentTier})";
+        }
+    }
+
+    public class FactionState
+    {
+        public FactionType Type { get; set; }
+        public string Name { get; set; }
+        public double Influence { get; set; }
+        public double Reputation { get; set; }
+        public bool HasCamp { get; set; }
+    }
+
+
+
+    public class EncounterOption
+    {
+        public string Description { get; set; }
+        public Func<WorldState, EncounterResult> Execute { get; set; }
+    }
+
+    public class EncounterDefinition
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Summary { get; set; }
+        public EncounterDifficulty Difficulty { get; set; }
+        public Func<WorldState, bool> CanOccur { get; set; }
+        public Func<WorldState, double> Weight { get; set; }
+        public List<EncounterOption> Options { get; set; } = new();
+        public string RelatedQuestId { get; set; }
+    }
+
+    public class EncounterResult
+    {
+        public string Message { get; set; }
+        public bool Success { get; set; }
+        public bool PlayerVisible { get; set; }
+    }
+
+    public class ProgressionBarDefinition
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public double Threshold { get; set; }
+        public double DecayAmount { get; set; }
+        public double MinValue { get; set; }
+        public double MaxValue { get; set; }
+        public int CheckFrequency { get; set; }
+        public Func<WorldState, bool> CanProgress { get; set; }
+        public Action<WorldState> OnComplete { get; set; }
+        public Action<WorldState> OnDecay { get; set; }
+    }
+
+    public class ProgressionBarState
+    {
+        public ProgressionBarDefinition Definition { get; set; }
+        public double Value { get; private set; }
+        public bool Completed { get; private set; }
+        public bool HasBeenTouched { get; private set; }
+
+        public ProgressionBarState(ProgressionBarDefinition definition)
+        {
+            Definition = definition;
+            Value = definition.MinValue;
+            HasBeenTouched = false;
+        }
+
+        public void AddProgress(double amount)
+        {
+            if (Completed)
+                return;
+
+            var previousValue = Value;
+            Value = Math.Min(Definition.MaxValue, Value + amount);
+            if (Value != previousValue)
+            {
+                HasBeenTouched = true;
+                LogColoredBarUpdate($"+{amount:F1}", previousValue, Value);
+            }
+
+            if (Value >= Definition.Threshold)
+            {
+                Completed = true;
+                Definition.OnComplete?.Invoke(WorldState.CurrentGlobalState);
+                LogColoredCompletion();
+            }
+        }
+
+        public void ApplyDecay()
+        {
+            if (Completed)
+                return;
+
+            var previousValue = Value;
+            Value = Math.Max(Definition.MinValue, Value - Definition.DecayAmount);
+            if (Value != previousValue)
+            {
+                HasBeenTouched = true;
+                LogColoredBarUpdate($"decay", previousValue, Value);
+            }
+            Definition.OnDecay?.Invoke(WorldState.CurrentGlobalState);
+        }
+
+        private void LogColoredBarUpdate(string action, double prevValue, double newValue)
+        {
+            var state = WorldState.CurrentGlobalState;
+            if (state?.ShowLogs == true)
+            {
+                var originalColor = Console.ForegroundColor;
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"[BAR] {Definition.Name} {action}: {prevValue:F1} → {newValue:F1}/{Definition.Threshold:F0}");
+                Console.ForegroundColor = originalColor;
+            }
+            state?.SimulationHistory.Add($"[BAR] {Definition.Name} {action}: {prevValue:F1} → {newValue:F1}/{Definition.Threshold:F0}");
+        }
+
+        private void LogColoredCompletion()
+        {
+            var state = WorldState.CurrentGlobalState;
+            if (state?.ShowLogs == true)
+            {
+                var originalColor = Console.ForegroundColor;
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"[COMPLETE] {Definition.Name} reached threshold!");
+                Console.ForegroundColor = originalColor;
+            }
+            state?.SimulationHistory.Add($"[COMPLETE] {Definition.Name} reached threshold!");
+        }
+
+        public override string ToString() => $"{Definition.Name}: {Value:F1}/{Definition.Threshold}";
+    }
+
+    public class EventBarInfluence
+    {
+        public string ZoneEvolutionBarId { get; set; }
+        public double AmountPerPoint { get; set; }
+    }
+
+    public class ZoneEvolutionBarDefinition
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public double MinValue { get; set; }
+        public double MaxValue { get; set; }
+        public double StartingValue { get; set; }
+        public double DecayAmount { get; set; }
+        public Action<WorldState, ZoneEvolutionMilestone> OnMilestoneReached { get; set; }
+        public Action<WorldState> OnMaxReached { get; set; }
+    }
+
+    public class ZoneEvolutionInfluence
+    {
+        public string SourceType { get; set; }
+        public string SourceId { get; set; }
+        public string SourceName { get; set; }
+        public double Amount { get; set; }
+
+        public override string ToString() => $"{SourceName} ({SourceType})";
+    }
+
+    public class ZoneEvolutionBarState
+    {
+        public ZoneEvolutionBarDefinition Definition { get; set; }
+        public double Value { get; private set; }
+        public ZoneEvolutionMilestone CurrentMilestone { get; private set; }
+        public bool HasReachedMax { get; private set; }
+        public List<string> ModificationHistory { get; private set; } = new();
+
+        public ZoneEvolutionBarState(ZoneEvolutionBarDefinition definition)
+        {
+            Definition = definition;
+            Value = definition.StartingValue;
+            CurrentMilestone = CalculateMilestone(Value);
+        }
+
+        public void AddInfluence(ZoneEvolutionInfluence influence, WorldState world)
+        {
+            if (HasReachedMax && influence.Amount > 0)
+                return;
+
+            var previousValue = Value;
+            var previousMilestone = CurrentMilestone;
+            
+            Value = Math.Max(Definition.MinValue, Math.Min(Definition.MaxValue, Value + influence.Amount));
+            CurrentMilestone = CalculateMilestone(Value);
+
+            if (Value != previousValue)
+            {
+                LogInfluence(influence, previousValue, Value, world);
+            }
+
+            if (CurrentMilestone != previousMilestone)
+            {
+                LogMilestoneReached(world);
+                Definition.OnMilestoneReached?.Invoke(world, CurrentMilestone);
+            }
+
+            if (Value >= Definition.MaxValue && !HasReachedMax)
+            {
+                HasReachedMax = true;
+                Definition.OnMaxReached?.Invoke(world);
+            }
+        }
+
+        private ZoneEvolutionMilestone CalculateMilestone(double value)
+        {
+            var range = Definition.MaxValue - Definition.MinValue;
+            var progress = (Value - Definition.MinValue) / range;
+            
+            if (progress >= 0.76) return ZoneEvolutionMilestone.Milestone4;
+            if (progress >= 0.51) return ZoneEvolutionMilestone.Milestone3;
+            if (progress >= 0.26) return ZoneEvolutionMilestone.Milestone2;
+            return ZoneEvolutionMilestone.Milestone1;
+        }
+
+        private void LogInfluence(ZoneEvolutionInfluence influence, double prevValue, double newValue, WorldState world)
+        {
+            var message = $"[ZoneEvolution] {Definition.Name}: {prevValue:F1} → {newValue:F1} ({(influence.Amount > 0 ? "+" : "")}{influence.Amount:F1} from {influence})";
+            world?.Log(LogCategory.Simulation, message);
+            ModificationHistory.Add(message);
+        }
+
+        private void LogMilestoneReached(WorldState world)
+        {
+            if (world?.ShowLogs == true)
+            {
+                var originalColor = Console.ForegroundColor;
+                Console.ForegroundColor = ConsoleColor.Magenta;
+                Console.WriteLine("\n" + new string('=', 50));
+                Console.WriteLine($"{Definition.Name.ToUpper()}");
+                Console.WriteLine($"MILESTONE {(int)CurrentMilestone} REACHED");
+                Console.WriteLine(Definition.Description);
+                Console.WriteLine(new string('=', 50) + "\n");
+                Console.ForegroundColor = originalColor;
+            }
+
+            var historyMessage = $"[MILESTONE] {Definition.Name} - Milestone {(int)CurrentMilestone}";
+            world?.Log(LogCategory.Simulation, historyMessage);
+        }
+
+        public override string ToString() => $"{Definition.Name}: {Value:F1} (Milestone {(int)CurrentMilestone})";
+    }
+
+    // ===== QUEST SYSTEM REDESIGN =====
+    
+    public class QuestReward
+    {
+        public double? Gold { get; set; }
+        public List<ItemStack> Items { get; set; } = new();
+        public Dictionary<FactionType, double> ReputationChanges { get; set; } = new();
+        public List<string> UnlockedQuestLineIds { get; set; } = new();
+        public List<string> UnlockedEncounterIds { get; set; } = new();
+    }
+
+    public class QuestEffect
+    {
+        public string BarId { get; set; }
+        public double Amount { get; set; }
+        public RegionId? TargetRegion { get; set; }
+    }
+
+    public class QuestDefinition
+    {
+        public string Id { get; set; }
+        public string Title { get; set; }
+        public string Description { get; set; }
+        public Func<WorldState, bool> CanStart { get; set; }
+        public List<string> RequiredEncounterIds { get; set; } = new();
+        public QuestReward Reward { get; set; } = new();
+        public List<QuestEffect> EventBarEffects { get; set; } = new();
+        public List<(string ZoneBarId, double Amount)> ZoneEvolutionEffects { get; set; } = new();
+        public List<string> SettlementEffects { get; set; } = new();
+    }
+
+    public class QuestLineProgress
+    {
+        public string QuestLineId { get; set; }
+        public int CurrentQuestIndex { get; set; }
+        public bool Completed { get; set; }
+        public List<string> CompletedQuestIds { get; set; } = new();
+    }
+
+    public class QuestLineDefinition
+    {
+        public string Id { get; set; }
+        public string Title { get; set; }
+        public string Description { get; set; }
+        public List<string> QuestIds { get; set; } = new();
+        public Func<WorldState, bool> CanStart { get; set; }
+        public List<string> PrerequisiteQuestLineIds { get; set; } = new();
+        public QuestReward FinalReward { get; set; } = new();
+        public Action<WorldState> OnComplete { get; set; }
+    }
+
+    public class QuestLineState
+    {
+        public QuestLineDefinition Definition { get; set; }
+        public int CurrentQuestIndex { get; set; }
+        public bool Completed { get; set; }
+        public List<string> CompletedQuestIds { get; set; } = new();
+
+        public QuestLineState(QuestLineDefinition definition)
+        {
+            Definition = definition;
+            CurrentQuestIndex = 0;
+            Completed = false;
+        }
+
+        public string GetCurrentQuestId() => Definition.QuestIds.Count > CurrentQuestIndex ? Definition.QuestIds[CurrentQuestIndex] : null;
+
+        public bool TryAdvanceToNextQuest()
+        {
+            if (CurrentQuestIndex < Definition.QuestIds.Count - 1)
+            {
+                CurrentQuestIndex++;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    // ===== SETTLEMENT SYSTEM REDESIGN =====
+
+    public class SettlementBuilding
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Type { get; set; }
+        public bool Active { get; set; }
+        public int Level { get; set; }
+    }
+
+    public class SettlementService
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public bool Available { get; set; }
+    }
+
+    public class SettlementDefinition
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Type { get; set; }
+        public RegionId Region { get; set; }
+        public double PopulationStart { get; set; }
+        public double WealthStart { get; set; }
+        public double SafetyStart { get; set; }
+        public List<string> InitialBuildings { get; set; } = new();
+        public List<string> InitialQuestLineIds { get; set; } = new();
+        public Dictionary<string, object> Properties { get; set; } = new();
+    }
+
+    public class SettlementState
+    {
+        public string Id { get; set; }
+        public SettlementDefinition Definition { get; set; }
+        public bool Discovered { get; set; }
+        public double Population { get; set; }
+        public double Wealth { get; set; }
+        public double Safety { get; set; }
+        public double MerchantActivity { get; set; }
+        public Dictionary<string, SettlementBuilding> Buildings { get; set; } = new();
+        public List<string> AvailableQuestLineIds { get; set; } = new();
+        public Dictionary<FactionType, double> Reputation { get; set; } = new();
+        public List<string> ConnectedSettlementIds { get; set; } = new();
+
+        public SettlementState(SettlementDefinition definition)
+        {
+            Id = definition.Id;
+            Definition = definition;
+            Discovered = false;
+            Population = definition.PopulationStart;
+            Wealth = definition.WealthStart;
+            Safety = definition.SafetyStart;
+            MerchantActivity = 0;
+
+            foreach (var buildingId in definition.InitialBuildings)
+            {
+                Buildings[buildingId] = new SettlementBuilding { Id = buildingId, Name = buildingId, Active = true, Level = 1 };
+            }
+
+            AvailableQuestLineIds = new List<string>(definition.InitialQuestLineIds);
+        }
+
+        public void Discover()
+        {
+            Discovered = true;
+        }
+
+        public void ModifyWealth(double amount)
+        {
+            Wealth = Math.Max(0, Math.Min(100, Wealth + amount));
+        }
+
+        public void ModifySafety(double amount)
+        {
+            Safety = Math.Max(0, Math.Min(100, Safety + amount));
+        }
+
+        public void ModifyMerchantActivity(double amount)
+        {
+            MerchantActivity = Math.Max(0, Math.Min(100, MerchantActivity + amount));
+        }
+    }
+
+    // ===== EVENTBAR EXPANSION =====
+
+    public class EventBarCompletion
+    {
+        public List<string> UnlockedEncounterIds { get; set; } = new();
+        public List<string> UnlockedQuestLineIds { get; set; } = new();
+        public List<string> SettlementEffects { get; set; } = new();
+        public List<(string SettlementId, string EffectType, double Amount)> SettlementModifications { get; set; } = new();
+        public List<(string ZoneBarId, double Amount)> ZoneEvolutionInfluences { get; set; } = new();
+    }
+
+    public class EventBarDefinition
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string Category { get; set; }
+        public double StartingValue { get; set; }
+        public double DecayAmount { get; set; }
+        public double Threshold { get; set; }
+        public double MinValue { get; set; }
+        public double MaxValue { get; set; }
+        public int CheckFrequency { get; set; }
+        public List<string> PrerequisiteEventBarIds { get; set; } = new();
+        public int CooldownTurns { get; set; }
+        public bool Repeatable { get; set; }
+        public EventBarCompletion OnCompletion { get; set; } = new();
+        public Func<WorldState, bool> CanProgress { get; set; }
+    }
+
+    public class EventBarState
+    {
+        public EventBarDefinition Definition { get; set; }
+        public double Value { get; private set; }
+        public bool Completed { get; private set; }
+        public int TurnsSinceCompletion { get; private set; }
+        public bool HasBeenTouched { get; internal set; }
+        private bool _completionProcessed = false;
+
+        public EventBarState(EventBarDefinition definition)
+        {
+            Definition = definition;
+            Value = definition.StartingValue;
+            Completed = false;
+            TurnsSinceCompletion = -1;
+            HasBeenTouched = false;
+            _completionProcessed = false;
+        }
+
+        public void AddProgress(double amount)
+        {
+            if (Completed && !Definition.Repeatable)
+                return;
+
+            double previousValue = Value;
+            Value = Math.Max(Definition.MinValue, Math.Min(Definition.MaxValue, Value + amount));
+            HasBeenTouched = true;
+
+            if (Value >= Definition.Threshold && !Completed)
+            {
+                Completed = true;
+                TurnsSinceCompletion = 0;
+                _completionProcessed = false;
+            }
+        }
+
+        public void ApplyDecay()
+        {
+            if (Completed && !Definition.Repeatable)
+                return;
+
+            Value = Math.Max(Definition.MinValue, Value - Definition.DecayAmount);
+            HasBeenTouched = true;
+
+            // For repeatable bars, reset completion when value drops below threshold
+            if (Definition.Repeatable && Completed && Value < Definition.Threshold)
+            {
+                Completed = false;
+                TurnsSinceCompletion = -1;
+                _completionProcessed = false;
+            }
+        }
+
+        public void UpdateCooldown()
+        {
+            if (Completed && TurnsSinceCompletion >= 0)
+                TurnsSinceCompletion++;
+        }
+
+        public void ResetCompletion()
+        {
+            if (Definition.Repeatable)
+            {
+                Completed = false;
+                TurnsSinceCompletion = -1;
+                _completionProcessed = false;
+            }
+        }
+
+        public bool ShouldProcessCompletion()
+        {
+            return Completed && !_completionProcessed;
+        }
+
+        public void MarkCompletionProcessed()
+        {
+            _completionProcessed = true;
+        }
+    }
+
+    // ===== PLAYER STATE UPDATED =====
+
+    public class PlayerState
+    {
+        public RegionId CurrentRegion { get; set; }
+        public double Health { get; set; }
+        public double MaxHealth { get; set; }
+        public double Gold { get; set; }
+        public Dictionary<string, int> Inventory { get; set; } = new();
+        public Dictionary<FactionType, double> Reputation { get; set; } = new();
+        public List<QuestLineState> ActiveQuestLines { get; set; } = new();
+        public List<string> DiscoveredSettlementIds { get; set; } = new();
+
+        public PlayerState(RegionId startingRegion)
+        {
+            CurrentRegion = startingRegion;
+            MaxHealth = 100;
+            Health = MaxHealth;
+            Gold = SimulationConfig.DefaultStartingGold;
+            foreach (FactionType faction in Enum.GetValues(typeof(FactionType)))
+                Reputation[faction] = 0;
+        }
+
+        public void AddItem(string id, int quantity)
+        {
+            if (!Inventory.ContainsKey(id))
+                Inventory[id] = 0;
+            Inventory[id] += quantity;
+        }
+
+        public bool SpendGold(double amount)
+        {
+            if (Gold < amount)
+                return false;
+            Gold -= amount;
+            return true;
+        }
+
+        public void Heal(double amount)
+        {
+            Health = Math.Min(MaxHealth, Health + amount);
+        }
+
+        public void Damage(double amount)
+        {
+            Health = Math.Max(0, Health - amount);
+        }
+    }
+
+    public class EconomyState
+    {
+        public Dictionary<string, double> MarketPrices { get; set; } = new();
+        public double RegionalWealth { get; set; }
+
+        public EconomyState()
+        {
+            RegionalWealth = 100;
+        }
+
+        public void UpdatePrices(DeterministicRandom rng)
+        {
+            foreach (var key in MarketPrices.Keys.ToList())
+            {
+                double volatility = (rng.Next(21) - 10) / 100.0 * SimulationConfig.MarketVolatility;
+                MarketPrices[key] = Math.Max(1, MarketPrices[key] * (1 + volatility));
+            }
+        }
+    }
+
+    public class LongTermEventDefinition
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public Func<WorldState, bool> Condition { get; set; }
+        public Action<WorldState> OnTrigger { get; set; }
+        public bool HasTriggered { get; set; }
+    }
+
+    public class WorldDefinitions
+    {
+        public static readonly Dictionary<RegionId, RegionDefinition> AllRegions = new()
+        {
+            {
+                RegionId.NorthernRealm,
+                new RegionDefinition
+                {
+                    RegionId = RegionId.NorthernRealm,
+                    Name = "Northern Realm",
+                    Biome = BiomeType.Plains,
+                    HasTown = true,
+                    HasWater = false,
+                    AdjacentRegions = new() { RegionId.DarkForest, RegionId.Highlands, RegionId.ArcaneEmpire },
+                    DefaultPaths = new() { EvolutionPath.AgeOfRaiders, EvolutionPath.EternalWinter, EvolutionPath.Ragnarok, EvolutionPath.UndeadNorth }
+                }
+            },
+            {
+                RegionId.DarkForest,
+                new RegionDefinition
+                {
+                    RegionId = RegionId.DarkForest,
+                    Name = "Dark Forest",
+                    Biome = BiomeType.Forest,
+                    HasTown = false,
+                    HasWater = true,
+                    AdjacentRegions = new() { RegionId.NorthernRealm, RegionId.Swamp, RegionId.ArcaneEmpire },
+                    DefaultPaths = new() { EvolutionPath.PrimordialJungle, EvolutionPath.CorruptedAbyss, EvolutionPath.ElvenEnclave, EvolutionPath.CursedWildlands }
+                }
+            },
+            {
+                RegionId.DesertKingdom,
+                new RegionDefinition
+                {
+                    RegionId = RegionId.DesertKingdom,
+                    Name = "Desert Kingdom",
+                    Biome = BiomeType.Desert,
+                    HasTown = true,
+                    HasWater = false,
+                    AdjacentRegions = new() { RegionId.Swamp, RegionId.Highlands, RegionId.InfernalLands },
+                    DefaultPaths = new() { EvolutionPath.AgeOfMerchants, EvolutionPath.AgeOfPharaohs, EvolutionPath.ElementalCatastrophe, EvolutionPath.ShadowAndSecrets }
+                }
+            },
+            {
+                RegionId.Swamp,
+                new RegionDefinition
+                {
+                    RegionId = RegionId.Swamp,
+                    Name = "Swamp",
+                    Biome = BiomeType.Swamp,
+                    HasTown = false,
+                    HasWater = true,
+                    AdjacentRegions = new() { RegionId.DarkForest, RegionId.DesertKingdom, RegionId.Highlands },
+                    DefaultPaths = new() { EvolutionPath.PrimordialBog, EvolutionPath.PlaguePestilence, EvolutionPath.MonsterDominion, EvolutionPath.MysticalAwakening }
+                }
+            },
+            {
+                RegionId.Highlands,
+                new RegionDefinition
+                {
+                    RegionId = RegionId.Highlands,
+                    Name = "Highlands",
+                    Biome = BiomeType.Mountain,
+                    HasTown = true,
+                    HasWater = false,
+                    AdjacentRegions = new() { RegionId.NorthernRealm, RegionId.Swamp, RegionId.DesertKingdom, RegionId.InfernalLands },
+                    DefaultPaths = new() { EvolutionPath.DwarvenProsperity, EvolutionPath.AsceticHermitage, EvolutionPath.DragonRoost, EvolutionPath.CorruptionBlight }
+                }
+            },
+            {
+                RegionId.InfernalLands,
+                new RegionDefinition
+                {
+                    RegionId = RegionId.InfernalLands,
+                    Name = "Infernal Lands",
+                    Biome = BiomeType.Infernal,
+                    HasTown = false,
+                    HasWater = false,
+                    AdjacentRegions = new() { RegionId.Highlands, RegionId.DesertKingdom, RegionId.ArcaneEmpire },
+                    DefaultPaths = new() { EvolutionPath.DemonicDominion, EvolutionPath.VolcanicCatastrophe, EvolutionPath.DemonicElementalFusion, EvolutionPath.EternalForge }
+                }
+            },
+            {
+                RegionId.ArcaneEmpire,
+                new RegionDefinition
+                {
+                    RegionId = RegionId.ArcaneEmpire,
+                    Name = "Arcane Empire",
+                    Biome = BiomeType.Arcane,
+                    HasTown = true,
+                    HasWater = true,
+                    AdjacentRegions = new() { RegionId.NorthernRealm, RegionId.DarkForest, RegionId.InfernalLands },
+                    DefaultPaths = new() { EvolutionPath.ArcaneAscendance, EvolutionPath.KnowledgeHoarding, EvolutionPath.TechnoMagicalSynthesis, EvolutionPath.CorruptionDecay }
+                }
+            }
+        };
+
+        public static RegionDefinition GetDefinition(RegionId regionId) => AllRegions[regionId];
+
+        public static EvolutionPath GetDefaultPathForRegion(RegionId regionId) => GetDefinition(regionId).DefaultPaths.First();
+
+        public static List<RegionId> ChooseCampaignRegions(RegionId startingRegion, DeterministicRandom rng)
+        {
+            var chosen = new List<RegionId> { startingRegion };
+            var neighbors = new List<RegionId>(GetDefinition(startingRegion).AdjacentRegions);
+            while (chosen.Count < SimulationConfig.CampaignRegionCount && neighbors.Count > 0)
+            {
+                int index = rng.Next(neighbors.Count);
+                chosen.Add(neighbors[index]);
+                neighbors.RemoveAt(index);
+            }
+
+            return chosen;
+        }
+    }
+
+    public class WorldState
+    {
+        public static WorldState CurrentGlobalState { get; private set; }
+
+        public ulong Seed { get; private set; }
+        public DeterministicRandom Rng { get; private set; }
+        public WorldClock Clock { get; private set; }
+        public Dictionary<RegionId, RegionState> Regions { get; private set; } = new();
+        public PlayerState Player { get; private set; }
+        public EconomyState Economy { get; private set; }
+        public Dictionary<FactionType, FactionState> Factions { get; private set; } = new();
+        public Dictionary<string, ProgressionBarState> ProgressionBars { get; private set; } = new();
+        public List<EncounterDefinition> Encounters { get; private set; } = new();
+        public List<LongTermEventDefinition> LongTermEvents { get; private set; } = new();
+        public List<QuestDefinition> QuestDefinitions { get; private set; } = new();
+        public List<string> SimulationHistory { get; private set; } = new();
+        public bool ShowLogs { get; set; } = true;
+        public bool AutoResolveEncounters { get; set; } = false;
+        public int TicksSinceLastEvolution { get; private set; }
+
+        private WorldState(ulong seed, RegionId startingRegion)
+        {
+            Seed = seed;
+            Rng = new DeterministicRandom(seed);
+            Clock = new WorldClock();
+            Player = new PlayerState(startingRegion);
+            Economy = new EconomyState();
+            CurrentGlobalState = this;
+            TicksSinceLastEvolution = 0;
+        }
+
+        public static WorldState CreateCampaign(ulong seed, RegionId startingRegion)
+        {
+            var state = new WorldState(seed, startingRegion);
+            state.InitializeRegions(startingRegion);
+            state.InitializeEconomy();
+            state.InitializeFactions();
+            state.InitializeProgressionBars();
+            state.InitializeEncounters();
+            state.InitializeLongTermEvents();
+            state.InitializeQuestDefinitions();
+            state.Log(LogCategory.Simulation, $"Campaign seeded with {seed} starting at {startingRegion}");
+            return state;
+        }
+
+        private void InitializeRegions(RegionId startingRegion)
+        {
+            var selected = WorldDefinitions.ChooseCampaignRegions(startingRegion, Rng);
+            foreach (var regionId in selected)
+            {
+                var definition = WorldDefinitions.GetDefinition(regionId);
+                var tier = Rng.Probability(SimulationConfig.StartingTier2Chance) ? WorldTier.Tier2 : WorldTier.Tier1;
+                var region = new RegionState(definition, tier, EvolutionPath.None);
+                region.ProgressionBars = CreateRegionProgressionBars(region);
+                region.ZoneEvolutionBars = CreateRegionZoneEvolutionBars(region);
+                region.EventBars = CreateRegionEventBars(region);
+                region.Settlements = CreateRegionSettlements(region);
+                Regions[regionId] = region;
+            }
+        }
+
+        private Dictionary<string, EventBarState> CreateRegionEventBars(RegionState region)
+        {
+            var bars = new Dictionary<string, EventBarState>();
+            foreach (var definition in EventBarRegistry.AllEventBars)
+            {
+                bars[definition.Id] = new EventBarState(definition);
+            }
+            return bars;
+        }
+
+        private Dictionary<string, SettlementState> CreateRegionSettlements(RegionState region)
+        {
+            var settlements = new Dictionary<string, SettlementState>();
+            var regionSettlements = SettlementRegistry.AllSettlements.Where(s => s.Region == region.RegionId).ToList();
+            foreach (var def in regionSettlements)
+            {
+                settlements[def.Id] = new SettlementState(def);
+                Player.DiscoveredSettlementIds.Add(def.Id);
+            }
+            return settlements;
+        }
+
+        private Dictionary<string, ProgressionBarState> CreateRegionProgressionBars(RegionState region)
+        {
+            var bars = new Dictionary<string, ProgressionBarState>();
+            foreach (var definition in ProgressionBarRegistry.AllRegionBarDefinitions)
+            {
+                bars[definition.Id] = new ProgressionBarState(definition);
+            }
+            return bars;
+        }
+
+        private Dictionary<string, ZoneEvolutionBarState> CreateRegionZoneEvolutionBars(RegionState region)
+        {
+            var bars = new Dictionary<string, ZoneEvolutionBarState>();
+            var definitions = ZoneEvolutionBarRegistry.GetBarsForRegion(region.RegionId);
+            foreach (var definition in definitions)
+            {
+                bars[definition.Id] = new ZoneEvolutionBarState(definition);
+            }
+            return bars;
+        }
+
+        private void InitializeEconomy()
+        {
+            Economy.MarketPrices = ItemRegistry.AllItems.ToDictionary(item => item.Id, item => (double)item.BaseValue);
+            Economy.UpdatePrices(Rng);
+        }
+
+        private void InitializeFactions()
+        {
+            foreach (var faction in FactionRegistry.AllFactions)
+            {
+                Factions[faction.Type] = faction;
+            }
+        }
+
+        private void InitializeProgressionBars()
+        {
+            foreach (var barDefinition in ProgressionBarRegistry.GlobalBarDefinitions)
+            {
+                ProgressionBars[barDefinition.Id] = new ProgressionBarState(barDefinition);
+            }
+        }
+
+        private void InitializeEncounters()
+        {
+            Encounters = EncounterRegistry.AllEncounters;
+        }
+
+        private void InitializeLongTermEvents()
+        {
+            LongTermEvents = LongTermEventRegistry.AllEvents;
+        }
+
+        private void InitializeQuestDefinitions()
+        {
+            QuestDefinitions = QuestRegistry.AllQuests;
+        }
+
+        public IEnumerable<QuestLineDefinition> GetAvailableQuestLines()
+        {
+            var startedIds = Player.ActiveQuestLines.Select(ql => ql.Definition.Id).ToHashSet();
+            return QuestLineRegistry.AllQuestLines.Where(ql => !startedIds.Contains(ql.Id) && ql.CanStart(this));
+        }
+
+        public bool StartQuestLine(string questLineId)
+        {
+            var questLineDef = QuestLineRegistry.AllQuestLines.FirstOrDefault(ql => ql.Id == questLineId);
+            if (questLineDef == null || !questLineDef.CanStart(this))
+                return false;
+
+            var questLineState = new QuestLineState(questLineDef);
+            Player.ActiveQuestLines.Add(questLineState);
+            Log(LogCategory.Player, $"Quest line started: {questLineDef.Title}");
+            return true;
+        }
+
+        public bool CompleteCurrentQuest(string questLineId)
+        {
+            var questLine = Player.ActiveQuestLines.FirstOrDefault(ql => ql.Definition.Id == questLineId);
+            if (questLine == null || questLine.Completed)
+                return false;
+
+            var currentQuestId = questLine.GetCurrentQuestId();
+            if (currentQuestId == null)
+                return false;
+
+            var questDef = QuestRegistry.AllQuests.FirstOrDefault(q => q.Id == currentQuestId);
+            if (questDef == null)
+                return false;
+
+            questLine.CompletedQuestIds.Add(currentQuestId);
+
+            // Apply quest effects
+            if (questDef.Reward.Gold.HasValue)
+                Player.Gold += questDef.Reward.Gold.Value;
+
+            foreach (var repChange in questDef.Reward.ReputationChanges)
+                Player.Reputation[repChange.Key] += repChange.Value;
+
+            foreach (var effect in questDef.EventBarEffects)
+            {
+                var targetRegion = effect.TargetRegion ?? Player.CurrentRegion;
+                var bar = GetRegionEventBar(targetRegion, effect.BarId);
+                if (bar != null)
+                    bar.AddProgress(effect.Amount);
+            }
+
+            foreach (var (zoneBarId, amount) in questDef.ZoneEvolutionEffects)
+                ApplyCurrentRegionZoneEvolutionInfluence(zoneBarId, "Quest", currentQuestId, questDef.Title, amount);
+
+            Log(LogCategory.Player, $"Quest completed: {questDef.Title}");
+
+            // Try to advance to next quest
+            if (!questLine.TryAdvanceToNextQuest())
+            {
+                questLine.Completed = true;
+                Log(LogCategory.Player, $"Quest line completed: {questLine.Definition.Title}");
+                
+                // Apply final rewards
+                if (questLine.Definition.FinalReward.Gold.HasValue)
+                    Player.Gold += questLine.Definition.FinalReward.Gold.Value;
+
+                questLine.Definition.OnComplete?.Invoke(this);
+            }
+
+            return true;
+        }
+
+        // ===== LEGACY QUEST METHODS (for backwards compatibility) =====
+        public IEnumerable<QuestDefinition> GetAvailableQuests() => new List<QuestDefinition>();
+        public bool AcceptQuest(string questId = null) => false;
+        public bool TurnInQuest(string questId = null) => false;
+        public void CompleteQuestsInTown() { }
+
+        public ProgressionBarState GetRegionProgressionBar(RegionId regionId, string barId)
+        {
+            return Regions.TryGetValue(regionId, out var region)
+                && region.ProgressionBars.TryGetValue(barId, out var bar)
+                ? bar
+                : null;
+        }
+
+        public ProgressionBarState GetCurrentRegionProgressionBar(string barId)
+        {
+            return GetRegionProgressionBar(Player.CurrentRegion, barId);
+        }
+
+        public ZoneEvolutionBarState GetRegionZoneEvolutionBar(RegionId regionId, string barId)
+        {
+            return Regions.TryGetValue(regionId, out var region)
+                && region.ZoneEvolutionBars.TryGetValue(barId, out var bar)
+                ? bar
+                : null;
+        }
+
+        public ZoneEvolutionBarState GetCurrentRegionZoneEvolutionBar(string barId)
+        {
+            return GetRegionZoneEvolutionBar(Player.CurrentRegion, barId);
+        }
+
+        public void ApplyZoneEvolutionInfluence(RegionId regionId, string barId, string sourceType, string sourceId, string sourceName, double amount)
+        {
+            var bar = GetRegionZoneEvolutionBar(regionId, barId);
+            if (bar != null)
+            {
+                var influence = new ZoneEvolutionInfluence
+                {
+                    SourceType = sourceType,
+                    SourceId = sourceId,
+                    SourceName = sourceName,
+                    Amount = amount
+                };
+                bar.AddInfluence(influence, this);
+            }
+        }
+
+        public void ApplyCurrentRegionZoneEvolutionInfluence(string barId, string sourceType, string sourceId, string sourceName, double amount)
+        {
+            ApplyZoneEvolutionInfluence(Player.CurrentRegion, barId, sourceType, sourceId, sourceName, amount);
+        }
+
+        public EventBarState GetRegionEventBar(RegionId regionId, string barId)
+        {
+            return Regions.TryGetValue(regionId, out var region)
+                && region.EventBars.TryGetValue(barId, out var bar)
+                ? bar
+                : null;
+        }
+
+        public EventBarState GetCurrentRegionEventBar(string barId)
+        {
+            return GetRegionEventBar(Player.CurrentRegion, barId);
+        }
+
+        public SettlementState GetSettlement(string settlementId)
+        {
+            foreach (var region in Regions.Values)
+            {
+                if (region.Settlements.TryGetValue(settlementId, out var settlement))
+                    return settlement;
+            }
+            return null;
+        }
+
+        public void DiscoverSettlement(string settlementId)
+        {
+            var settlement = GetSettlement(settlementId);
+            if (settlement != null && !settlement.Discovered)
+            {
+                settlement.Discover();
+                Player.DiscoveredSettlementIds.Add(settlementId);
+                Log(LogCategory.Player, $"You discovered {settlement.Definition.Name}!");
+            }
+        }
+
+        public void Log(LogCategory category, string message)
+        {
+            if (ShowLogs)
+                SimulationLog.Write(category, message);
+
+            if (category == LogCategory.Simulation)
+                SimulationHistory.Add(message);
+        }
+
+        public void LogProgressionBars(string context)
+        {
+            var touchedBars = new List<string>();
+
+            if (ProgressionBars.TryGetValue("WorldStability", out var worldStability) && worldStability.HasBeenTouched)
+            {
+                touchedBars.Add($"WorldStability={worldStability.Value:F1}/{worldStability.Definition.Threshold:F0}");
+            }
+
+            foreach (var region in Regions.OrderBy(r => r.Key))
+            {
+                var regionTouched = region.Value.ProgressionBars
+                    .Where(kvp => kvp.Value.HasBeenTouched)
+                    .OrderBy(kvp => kvp.Key);
+                
+                foreach (var bar in regionTouched)
+                {
+                    touchedBars.Add($"{region.Value.Definition.Name}.{bar.Key}={bar.Value.Value:F1}/{bar.Value.Definition.Threshold:F0}");
+                }
+            }
+
+            if (touchedBars.Count > 0)
+            {
+                Log(LogCategory.Simulation, $"[PROGRESS] {context}: {string.Join(" | ", touchedBars)}");
+            }
+        }
+
+        public void LogZoneEvolutionBars(string context)
+        {
+            var zoneLines = new List<string>();
+
+            foreach (var region in Regions.OrderBy(r => r.Key))
+            {
+                var bars = region.Value.ZoneEvolutionBars.OrderBy(kvp => kvp.Key);
+                foreach (var bar in bars)
+                {
+                    var milestone = bar.Value.CurrentMilestone;
+                    var milestonePercent = milestone switch
+                    {
+                        ZoneEvolutionMilestone.Milestone1 => "0-25%",
+                        ZoneEvolutionMilestone.Milestone2 => "26-50%",
+                        ZoneEvolutionMilestone.Milestone3 => "51-75%",
+                        ZoneEvolutionMilestone.Milestone4 => "76-100%",
+                        _ => "unknown"
+                    };
+                    zoneLines.Add($"{region.Value.Definition.Name}.{bar.Key}={bar.Value.Value:F1} [{milestonePercent}]");
+                }
+            }
+
+            if (zoneLines.Count > 0)
+            {
+                Log(LogCategory.Simulation, $"[ZONES] {context}: {string.Join(" | ", zoneLines)}");
+            }
+        }
+
+        public void AdvanceWorld(int minutes)
+        {
+            Clock.AdvanceMinutes(minutes);
+            Log(LogCategory.Simulation, $"World advanced by {minutes} minutes. Time is now {Clock.CurrentTime}.");
+            for (int i = 0; i < SimulationConfig.WorldUpdateTicksPerAction; i++)
+            {
+                UpdateEconomy();
+                UpdateProgression();
+            }
+
+            TicksSinceLastEvolution++;
+            if (TicksSinceLastEvolution >= SimulationConfig.EvolutionCheckFrequency)
+            {
+                TicksSinceLastEvolution = 0;
+                CheckEvolution();
+            }
+
+            TryTriggerLongTermEvents();
+            LogProgressionBars($"after advancing {minutes} minutes");
+        }
+
+        private void UpdateEconomy()
+        {
+            Economy.UpdatePrices(Rng);
+            Log(LogCategory.Simulation, "Marketplace prices shifted slightly.");
+        }
+
+        private void UpdateProgression()
+        {
+            foreach (var bar in ProgressionBars.Values)
+                bar.ApplyDecay();
+
+            foreach (var region in Regions.Values)
+            {
+                // Update progression bars
+                foreach (var bar in region.ProgressionBars.Values)
+                    bar.ApplyDecay();
+
+                // Update zone evolution bars
+                foreach (var zoneBar in region.ZoneEvolutionBars.Values)
+                {
+                    var decayInfluence = new ZoneEvolutionInfluence
+                    {
+                        SourceType = "Decay",
+                        SourceId = "passive",
+                        SourceName = "Time passes",
+                        Amount = -zoneBar.Definition.DecayAmount
+                    };
+                    zoneBar.AddInfluence(decayInfluence, this);
+                }
+
+                // Update event bars and check for completion
+                foreach (var eventBar in region.EventBars.Values)
+                {
+                    eventBar.ApplyDecay();
+                    
+                    if (eventBar.ShouldProcessCompletion())
+                    {
+                        ProcessEventBarCompletion(region, eventBar);
+                        eventBar.MarkCompletionProcessed();
+                    }
+                }
+            }
+
+            Log(LogCategory.Simulation, "Progression and event bars decayed according to current conditions.");
+            LogProgressionBars("after progression decay");
+        }
+
+        private void ProcessEventBarCompletion(RegionState region, EventBarState eventBar)
+        {
+            var def = eventBar.Definition;
+            Log(LogCategory.Simulation, $"EVENT: {def.Name} has completed in {region.Definition.Name}!");
+
+            // Unlock encounters
+            foreach (var encounterId in def.OnCompletion.UnlockedEncounterIds)
+            {
+                Log(LogCategory.Simulation, $"  + Encounter unlocked: {encounterId}");
+            }
+
+            // Unlock quest lines
+            foreach (var questLineId in def.OnCompletion.UnlockedQuestLineIds)
+            {
+                Log(LogCategory.Simulation, $"  + Quest line unlocked: {questLineId}");
+                // TODO: Actually add to available quest lines when player visits settlement
+            }
+
+            // Modify settlements
+            foreach (var (settlementId, statType, amount) in def.OnCompletion.SettlementModifications)
+            {
+                if (region.Settlements.TryGetValue(settlementId, out var settlement))
+                {
+                    Log(LogCategory.Simulation, $"  + {settlement.Definition.Name} {statType} changed by {amount}");
+                    // Settlement modifications handled in settlement system
+                }
+            }
+
+            // Influence zone evolution
+            foreach (var (zoneBarId, amount) in def.OnCompletion.ZoneEvolutionInfluences)
+            {
+                if (region.ZoneEvolutionBars.TryGetValue(zoneBarId, out var zoneBar))
+                {
+                    var influence = new ZoneEvolutionInfluence
+                    {
+                        SourceType = "EventCompletion",
+                        SourceId = eventBar.Definition.Id,
+                        SourceName = eventBar.Definition.Name,
+                        Amount = amount
+                    };
+                    zoneBar.AddInfluence(influence, this);
+                    Log(LogCategory.Simulation, $"  + Zone bar {zoneBarId} influenced by {amount}");
+                }
+            }
+
+            // Reset cooldown if repeatable
+            if (def.Repeatable)
+            {
+                eventBar.ResetCompletion();
+                Log(LogCategory.Simulation, $"  + {def.Name} will trigger again after cooldown");
+            }
+        }
+
+        private void CheckEvolution()
+        {
+            foreach (var region in Regions.Values)
+            {
+                var active = region.ProgressionBars.Values.Where(b => b.Completed).ToList();
+                if (active.Count > 0)
+                {
+                    PromoteRegion(region, active.Count);
+                }
+            }
+        }
+
+        private void PromoteRegion(RegionState region, int completedBars)
+        {
+            if (region.CurrentTier < WorldTier.Tier5)
+            {
+                region.CurrentTier = (WorldTier)Math.Min((int)WorldTier.Tier5, (int)region.CurrentTier + 1);
+                Log(LogCategory.Simulation, $"{region.Definition.Name} grew more dangerous and advanced to Tier {(int)region.CurrentTier}.");
+            }
+
+            if (region.ProgressionBars.Values.Any(bar => bar.Completed))
+            {
+                var path = WorldDefinitions.GetDefaultPathForRegion(region.RegionId);
+                region.CurrentPath = path;
+                Log(LogCategory.Simulation, $"{region.Definition.Name} settled into the {path} evolution path.");
+            }
+        }
+
+        private void TryTriggerLongTermEvents()
+        {
+            foreach (var longEvent in LongTermEvents.Where(e => !e.HasTriggered).ToList())
+            {
+                if (longEvent.Condition(this))
+                {
+                    longEvent.HasTriggered = true;
+                    longEvent.OnTrigger(this);
+                    Log(LogCategory.Simulation, $"Long-term event triggered: {longEvent.Name}");
+                    Log(LogCategory.Player, $"Something changes in the world: {longEvent.Name}.");
+                }
+            }
+        }
+
+        public EncounterDefinition RollEncounter()
+        {
+            var available = Encounters.Where(e => e.CanOccur(this)).ToList();
+            if (available.Count == 0)
+                return null;
+
+            // TODO: Implement quest-related encounter filtering with new QuestLine system
+            double totalWeight = 0;
+            foreach (var encounter in available)
+            {
+                double weight = encounter.Weight(this);
+                totalWeight += weight;
+            }
+
+            double pick = Rng.Next((int)(totalWeight * 1000)) / 1000.0;
+            double current = 0;
+            foreach (var encounter in available)
+            {
+                double weight = encounter.Weight(this);
+                current += weight;
+                if (pick <= current)
+                    return encounter;
+            }
+
+            return available.Last();
+        }
+
+        public EncounterResult ResolveEncounter(EncounterDefinition encounter, EncounterOption option)
+        {
+            var result = option.Execute(this);
+            if (result.PlayerVisible)
+                Log(LogCategory.Player, result.Message);
+            else
+                Log(LogCategory.Simulation, result.Message);
+
+            if (result.Success)
+            {
+                // TODO: Implement quest completion check with new QuestLine system
+                // Check if this encounter completes any active quest lines
+            }
+
+            return result;
+        }
+
+        public void Explore()
+        {
+            Log(LogCategory.Player, "You venture forth into the surrounding land.");
+            AdvanceWorld(SimulationConfig.ExploreMinutes);
+            var encounterRoll = Rng.Probability(SimulationConfig.EncounterChance);
+            if (encounterRoll)
+            {
+                var encounter = RollEncounter();
+                if (encounter != null)
+                {
+                    Log(LogCategory.Player, $"Encounter: {encounter.Name} - {encounter.Summary}");
+                    PresentEncounter(encounter);
+                    return;
+                }
+            }
+
+            // Try to discover a settlement by RNG
+            var region = Regions[Player.CurrentRegion];
+            var undiscoveredSettlements = region.Settlements.Values.Where(s => !s.Discovered).ToList();
+            if (undiscoveredSettlements.Count > 0 && Rng.Probability(0.30))
+            {
+                var discoveredSettlement = undiscoveredSettlements[Rng.Next(undiscoveredSettlements.Count)];
+                discoveredSettlement.Discover();
+                Log(LogCategory.Player, $"Through your exploration, you discover the settlement of {discoveredSettlement.Definition.Name}! It has been added to your fast travel locations.");
+                return;
+            }
+
+            var discoveryMessage = DiscoverLandmark();
+            Log(LogCategory.Player, discoveryMessage);
+        }
+
+        private string DiscoverLandmark()
+        {
+            var region = Regions[Player.CurrentRegion];
+            if (region.Definition.Biome == BiomeType.Forest && Rng.Probability(0.25))
+                return "You discover an overgrown shrine hidden beneath the trees.";
+            if (region.Definition.Biome == BiomeType.Mountain && Rng.Probability(0.20))
+                return "You find a narrow pass with carvings of an old dragon cult.";
+            if (region.Definition.Biome == BiomeType.Swamp && Rng.Probability(0.20))
+                return "You stumble upon a flooded ruin with strange lights.";
+            if (Rng.Probability(0.15))
+                return "Your exploration reveals a small treasure cache of useful supplies.";
+            return "The landscape shifts subtly as you move; nothing remarkable appears yet.";
+        }
+
+        private void PresentEncounter(EncounterDefinition encounter)
+        {
+            if (!ShowLogs || AutoResolveEncounters)
+            {
+                var autoChoice = encounter.Options[Rng.Next(encounter.Options.Count)];
+                ResolveEncounter(encounter, autoChoice);
+                return;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"--- {encounter.Name} ---");
+            Console.WriteLine(encounter.Summary);
+            for (int i = 0; i < encounter.Options.Count; i++)
+            {
+                Console.WriteLine($"[{i + 1}] {encounter.Options[i].Description}");
+            }
+
+            while (true)
+            {
+                Console.Write("Choose an option: ");
+                var input = Console.ReadLine();
+                if (int.TryParse(input, out var selection) && selection >= 1 && selection <= encounter.Options.Count)
+                {
+                    ResolveEncounter(encounter, encounter.Options[selection - 1]);
+                    break;
+                }
+
+                Console.WriteLine("Invalid selection. Please enter the number of your choice.");
+            }
+
+            Console.WriteLine();
+        }
+
+        public void Rest()
+        {
+            var region = Regions[Player.CurrentRegion];
+            var activities = GetAvailableRestActivities(region);
+            Log(LogCategory.Player, "You take time to rest and recover.");
+            foreach (var activity in activities)
+            {
+                Log(LogCategory.Player, $"- {activity}");
+            }
+
+            Player.Heal(SimulationConfig.RestHours * SimulationConfig.RestHealPerHour);
+            Log(LogCategory.Player, $"You restore health to {Player.Health:F0}/{Player.MaxHealth}.");
+            AdvanceWorld(SimulationConfig.RestHours * 60);
+        }
+
+        private List<string> GetAvailableRestActivities(RegionState region)
+        {
+            var activities = new List<string> { "Sleep", "Meditate", "Sharpen weapons" };
+            if (region.Definition.HasWater)
+                activities.Add("Fish");
+            if (region.Definition.HasTown)
+                activities.Add("Visit the tavern");
+            activities.Add("Read a book");
+            return activities;
+        }
+
+        public bool Travel(RegionId destination)
+        {
+            if (!Regions.ContainsKey(destination))
+            {
+                Log(LogCategory.Player, "That destination is not part of your current campaign.");
+                return false;
+            }
+
+            if (destination == Player.CurrentRegion)
+            {
+                Log(LogCategory.Player, "You are already in that region.");
+                return false;
+            }
+
+            var region = Regions[Player.CurrentRegion];
+            Log(LogCategory.Player, $"You prepare to leave {region.Definition.Name}.");
+            Log(LogCategory.Player, "You are about to leave this region. Returning will no longer be possible.");
+
+            string input;
+            if (AutoResolveEncounters)
+            {
+                input = "y";
+            }
+            else
+            {
+                Console.Write("Confirm travel? (y/n): ");
+                input = Console.ReadLine()?.Trim().ToLower();
+            }
+
+            if (input != "y")
+            {
+                Log(LogCategory.Player, "You decide to stay for now.");
+                return false;
+            }
+
+            region.IsLocked = true;
+            Player.CurrentRegion = destination;
+            Log(LogCategory.Player, $"You travel to {Regions[destination].Definition.Name}. It will continue evolving while you were away.");
+            AdvanceWorld(SimulationConfig.ExploreMinutes);
+            return true;
+        }
+
+        public void VisitTown()
+        {
+            var region = Regions[Player.CurrentRegion];
+            var discoveredSettlements = region.Settlements.Values.Where(s => s.Discovered).ToList();
+            
+            if (discoveredSettlements.Count == 0)
+            {
+                Log(LogCategory.Player, "You have not yet discovered any settlements in this region. Explore to find towns!");
+                return;
+            }
+
+            SettlementState selectedSettlement;
+            if (discoveredSettlements.Count == 1)
+            {
+                selectedSettlement = discoveredSettlements[0];
+                Log(LogCategory.Player, $"You fast travel to {selectedSettlement.Definition.Name}.");
+            }
+            else
+            {
+                // Show multiple settlement options
+                if (!ShowLogs || AutoResolveEncounters)
+                {
+                    selectedSettlement = discoveredSettlements[Rng.Next(discoveredSettlements.Count)];
+                    Log(LogCategory.Player, $"You fast travel to {selectedSettlement.Definition.Name}.");
+                }
+                else
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("Discovered Settlements:");
+                    for (int i = 0; i < discoveredSettlements.Count; i++)
+                    {
+                        Console.WriteLine($"[{i + 1}] {discoveredSettlements[i].Definition.Name}");
+                    }
+
+                    while (true)
+                    {
+                        Console.Write("Choose destination: ");
+                        var input = Console.ReadLine();
+                        if (int.TryParse(input, out var selection) && selection >= 1 && selection <= discoveredSettlements.Count)
+                        {
+                            selectedSettlement = discoveredSettlements[selection - 1];
+                            Log(LogCategory.Player, $"You fast travel to {selectedSettlement.Definition.Name}.");
+                            break;
+                        }
+
+                        Console.WriteLine("Invalid selection. Please enter a valid settlement number.");
+                    }
+
+                    Console.WriteLine();
+                }
+            }
+
+            Log(LogCategory.Player, "You arrive in town and listen for rumors.");
+            AdvanceWorld(60);
+            Log(LogCategory.Player, "Merchants haggle openly and faction agents watch for trouble.");
+            Player.AddItem("RumorFragment", 1);
+
+            if (ShowLogs && !AutoResolveEncounters)
+                OfferTownQuests();
+            else
+                AutoAcceptTownQuests();
+
+            HandleTurnInRequests();
+            CompleteQuestsInTown();
+        }
+
+        private void HandleTurnInRequests()
+        {
+            // TODO: Implement quest turnin with new QuestLine system
+        }
+
+        private void OfferTownQuests()
+        {
+            // TODO: Implement quest offering with new QuestLine system
+            Log(LogCategory.Player, "The town is quiet today. No new opportunities present themselves.");
+        }
+
+        private void AutoAcceptTownQuests()
+        {
+            // TODO: Implement auto quest acceptance with new QuestLine system
+        }
+
+        public void VisitMarketplace()
+        {
+            var region = Regions[Player.CurrentRegion];
+            var discoveredSettlements = region.Settlements.Values.Where(s => s.Discovered).ToList();
+            
+            if (discoveredSettlements.Count == 0)
+            {
+                Log(LogCategory.Player, "There is no marketplace here. You must discover a settlement first by exploring.");
+                return;
+            }
+
+            var settlement = discoveredSettlements.Count == 1 
+                ? discoveredSettlements[0]
+                : discoveredSettlements[Rng.Next(discoveredSettlements.Count)];
+
+            Log(LogCategory.Player, $"You browse the marketplace in {settlement.Definition.Name}.");
+            AdvanceWorld(45);
+            var item = ItemRegistry.AllItems[Rng.Next(ItemRegistry.AllItems.Count)];
+            var price = Economy.MarketPrices[item.Id];
+            Log(LogCategory.Player, $"A merchant offers {item.Name} for {price:F0} gold.");
+            if (Player.Gold >= price)
+            {
+                Player.SpendGold(price);
+                Player.AddItem(item.Id, 1);
+                Log(LogCategory.Player, $"You purchase {item.Name}.");
+            }
+            else
+            {
+                Log(LogCategory.Player, "You do not have enough gold.");
+            }
+        }
+
+        public void InventorySummary()
+        {
+            Log(LogCategory.Player, $"Gold: {Player.Gold:F0}");
+            if (Player.Inventory.Count == 0)
+            {
+                Log(LogCategory.Player, "Inventory is empty.");
+                return;
+            }
+
+            foreach (var kvp in Player.Inventory)
+            {
+                var item = ItemRegistry.GetItem(kvp.Key);
+                Log(LogCategory.Player, $"{kvp.Value}x {item.Name}");
+            }
+        }
+
+        public void CharacterSummary()
+        {
+            Log(LogCategory.Player, $"Health: {Player.Health:F0}/{Player.MaxHealth}");
+            foreach (var reputation in Player.Reputation)
+            {
+                Log(LogCategory.Player, $"{reputation.Key}: {reputation.Value:F1}");
+            }
+        }
+
+        public void QuestLogSummary()
+        {
+            if (Player.ActiveQuestLines.Count == 0)
+            {
+                Log(LogCategory.Player, "You have no quest lines in progress.");
+            }
+            else
+            {
+                foreach (var questLine in Player.ActiveQuestLines.Where(ql => !ql.Completed))
+                {
+                    var currentQuestId = questLine.GetCurrentQuestId();
+                    var currentQuest = currentQuestId != null ? QuestRegistry.AllQuests.FirstOrDefault(q => q.Id == currentQuestId) : null;
+                    Log(LogCategory.Player, $"[ACTIVE] {questLine.Definition.Title}: {currentQuest?.Title ?? "Unknown"}");
+                }
+
+                var completedLines = Player.ActiveQuestLines.Where(ql => ql.Completed).ToList();
+                if (completedLines.Count > 0)
+                {
+                    Log(LogCategory.Player, "Completed quest lines:");
+                    foreach (var questLine in completedLines)
+                    {
+                        Log(LogCategory.Player, $"  {questLine.Definition.Title}");
+                    }
+                }
+            }
+        }
+
+        public void ReadBook()
+        {
+            Log(LogCategory.Player, "You sit down to read a book and expand your knowledge.");
+            AdvanceWorld(60);
+            Player.Reputation[FactionType.Mages] += 0.5;
+            Log(LogCategory.Player, "Your understanding of the world deepens.");
+        }
+
+        public void Fish()
+        {
+            var region = Regions[Player.CurrentRegion];
+            if (!region.Definition.HasWater)
+            {
+                Log(LogCategory.Player, "There is nowhere suitable to fish here.");
+                return;
+            }
+
+            Log(LogCategory.Player, "You cast a line into the water.");
+            AdvanceWorld(45);
+            if (Rng.Probability(0.6))
+            {
+                Player.AddItem("FreshFish", 1);
+                Log(LogCategory.Player, "You catch some fresh fish.");
+            }
+            else
+            {
+                Log(LogCategory.Player, "The fish ignore your bait.");
+            }
+        }
+
+        public void Camp()
+        {
+            Log(LogCategory.Player, "You set up camp for the night.");
+            AdvanceWorld(8 * 60);
+            Player.Heal(SimulationConfig.RestHealPerHour * 8);
+            Log(LogCategory.Player, "The night restores your strength.");
+        }
+
+        public void Craft()
+        {
+            Log(LogCategory.Player, "You attempt to craft something useful.");
+            AdvanceWorld(90);
+            if (Player.Inventory.TryGetValue("IronOre", out var amount) && amount >= 1)
+            {
+                Player.Inventory["IronOre"] -= 1;
+                Player.AddItem("IronIngot", 1);
+                Log(LogCategory.Player, "You smelt iron ore into an iron ingot.");
+            }
+            else
+            {
+                Log(LogCategory.Player, "You lack the materials to craft anything meaningful.");
+            }
+        }
+
+        public void PerformAutomaticAction(bool questMode = false)
+        {
+            if (questMode)
+            {
+                PerformQuestFocusedAction();
+                return;
+            }
+
+            if (Player.Health < Player.MaxHealth * 0.3)
+            {
+                Log(LogCategory.Simulation, "Automatic action: rest because health is low.");
+                Rest();
+                return;
+            }
+
+            if (Rng.Probability(0.55))
+            {
+                Log(LogCategory.Simulation, "Automatic action: explore.");
+                Explore();
+                return;
+            }
+
+            if (Rng.Probability(0.15))
+            {
+                Log(LogCategory.Simulation, "Automatic action: visit town.");
+                VisitTown();
+                return;
+            }
+
+            if (Rng.Probability(0.1))
+            {
+                Log(LogCategory.Simulation, "Automatic action: fish.");
+                Fish();
+                return;
+            }
+
+            Log(LogCategory.Simulation, "Automatic action: craft.");
+            Craft();
+        }
+
+        public void PerformQuestFocusedAction()
+        {
+            if (Player.Health <= 0)
+                return;
+
+            if (Player.Health < Player.MaxHealth * 0.2)
+            {
+                Log(LogCategory.Player, "[QUEST] Resting to heal.");
+                Rest();
+                return;
+            }
+
+            // TODO: Implement quest-focused action with new QuestLine system
+            if (Player.ActiveQuestLines.Count == 0)
+            {
+                Log(LogCategory.Player, "[QUEST] No active quest lines.");
+                return;
+            }
+
+            Log(LogCategory.Player, $"[QUEST] Following active quest line...");
+            Explore();
+        }
+
+        private void UpdateFactionInfluence(FactionType faction, double amount)
+        {
+            if (!Factions.ContainsKey(faction))
+                return;
+
+            Factions[faction].Influence = Math.Max(0, Factions[faction].Influence + amount);
+        }
+
+        public void ModifyReputation(FactionType faction, double amount)
+        {
+            Player.Reputation[faction] = Math.Max(-50, Math.Min(50, Player.Reputation[faction] + amount));
+            Log(LogCategory.Simulation, $"Reputation with {faction} changed by {amount:F1}.");
+        }
+
+        private void ApplyActionProgression(RegionState regionState, PlayerAction action, double multiplier = 1.0)
+        {
+            if (action is PlayerAction.Raid or PlayerAction.Defend or PlayerAction.Fight or PlayerAction.Help)
+            {
+                if (regionState.ProgressionBars.TryGetValue("BanditClearance", out var clearanceBar))
+                    clearanceBar.AddProgress(6.0 * multiplier);
+
+                // EventBar effects for Help and Defend
+                if (action == PlayerAction.Help)
+                {
+                    AddEventBarProgress(regionState, "MerchantCaravan", 3.0 * multiplier);
+                    AddEventBarProgress(regionState, "FarmersNeed", 2.0 * multiplier);
+                    AddEventBarProgress(regionState, "TempleActivity", 1.0 * multiplier);
+                }
+                else if (action == PlayerAction.Defend)
+                {
+                    AddEventBarProgress(regionState, "RangerActivity", 4.0 * multiplier);
+                    AddEventBarProgress(regionState, "BanditPatrol", -3.0 * multiplier);
+                }
+                else if (action is PlayerAction.Raid or PlayerAction.Fight)
+                {
+                    AddEventBarProgress(regionState, "RangerActivity", 5.0 * multiplier);
+                    AddEventBarProgress(regionState, "BanditPatrol", -5.0 * multiplier);
+                }
+                return;
+            }
+
+            if (action is PlayerAction.Research or PlayerAction.Corrupt or PlayerAction.Negotiate or PlayerAction.Investigate or PlayerAction.ReadBook)
+            {
+                if (regionState.ProgressionBars.TryGetValue("MagicalAwareness", out var arcaneBar))
+                    arcaneBar.AddProgress(4.0 * multiplier);
+
+                // EventBar effects for investigation and research
+                if (action == PlayerAction.Investigate)
+                {
+                    AddEventBarProgress(regionState, "RangerActivity", 5.0 * multiplier);
+                    AddEventBarProgress(regionState, "BanditPatrol", -6.0 * multiplier);
+                }
+                else if (action is PlayerAction.Research or PlayerAction.ReadBook or PlayerAction.Negotiate)
+                {
+                    AddEventBarProgress(regionState, "TempleActivity", 3.0 * multiplier);
+                }
+                return;
+            }
+
+            if (action == PlayerAction.Explore)
+            {
+                if (regionState.ProgressionBars.TryGetValue("BanditClearance", out var clearanceBar))
+                    clearanceBar.AddProgress(2.0 * multiplier);
+                AddEventBarProgress(regionState, "MerchantCaravan", 1.0 * multiplier);
+                AddEventBarProgress(regionState, "RangerActivity", 1.0 * multiplier);
+            }
+        }
+
+        private void AddEventBarProgress(RegionState region, string barId, double amount)
+        {
+            if (region.EventBars.TryGetValue(barId, out var bar))
+            {
+                bar.AddProgress(amount);
+            }
+        }
+
+        public void PerformPlayerAction(RegionId region, PlayerAction action)
+        {
+            LogProgressionBars($"before player action {action}");
+
+            if (!Regions.ContainsKey(region))
+            {
+                Log(LogCategory.Player, "That region is not available in this campaign.");
+                return;
+            }
+
+            var regionState = Regions[region];
+            Log(LogCategory.Player, $"You take action {action} in {regionState.Definition.Name}.");
+
+            var influences = EvolutionRules.CalculateActionInfluence(region, action);
+            foreach (var influence in influences)
+            {
+                if (!Regions.TryGetValue(influence.TargetRegion, out var affected))
+                    continue;
+
+                var originalTier = affected.CurrentTier;
+                var originalPath = affected.CurrentPath;
+
+                if (affected.CurrentTier == WorldTier.Tier1)
+                {
+                    double upgradeChance = 0.10 + influence.TierChanceDelta;
+                    if (Rng.Probability(upgradeChance))
+                    {
+                        affected.CurrentTier = WorldTier.Tier2;
+                        Log(LogCategory.Simulation, $"{affected.Definition.Name} advanced {originalTier} -> {affected.CurrentTier} due to {action}.");
+                    }
+                }
+
+                if (Rng.Probability(influence.PathChangeChance))
+                {
+                    var chosenPath = EvolutionRules.ChooseWeightedPath(affected.RegionId, action, Rng);
+                    if (chosenPath != affected.CurrentPath)
+                    {
+                        affected.CurrentPath = chosenPath;
+                        Log(LogCategory.Simulation, $"{affected.Definition.Name} shifted from {originalPath} to {chosenPath} because of {action}.");
+                    }
+                }
+
+                ApplyActionProgression(affected, action, influence.TargetRegion == region ? 1.0 : 0.5);
+            }
+
+            AdvanceWorld(30);
+            CompleteQuestsInTown();
+            LogProgressionBars($"after player action {action}");
+        }
+
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Time: {Clock.CurrentTime}");
+            sb.AppendLine($"Player Region: {Player.CurrentRegion}");
+            sb.AppendLine($"Health: {Player.Health:F0}/{Player.MaxHealth}, Gold: {Player.Gold:F0}");
+            sb.AppendLine("Regions:");
+            foreach (var region in Regions.Values)
+            {
+                sb.AppendLine($"  {region.Definition.Name}: {region.CurrentPath} (Tier {(int)region.CurrentTier})");
+            }
+            return sb.ToString();
+        }
+
+        // Legacy quest system stubs (preserved for UI compatibility)
+        public bool TurnInQuest() => false;
+        public bool AcceptQuest() => false;
+    }
+
+    public class WorldCampaign
+    {
+        private readonly WorldState _world;
+
+        public WorldCampaign(ulong seed, RegionId startingRegion)
+        {
+            _world = WorldState.CreateCampaign(seed, startingRegion);
+        }
+
+        public WorldState World => _world;
+        public Dictionary<RegionId, RegionState> Regions => _world.Regions;
+        public List<string> EventLog => _world.SimulationHistory;
+
+        public void PerformPlayerAction(RegionId region, PlayerAction action)
+        {
+            _world.PerformPlayerAction(region, action);
+        }
+
+        public override string ToString() => _world.ToString();
+    }
+
+    public class NoveltyTracker
+    {
+        public List<WorldState> Campaigns { get; private set; } = new();
+        public Dictionary<string, int> PathOccurrences { get; private set; } = new();
+
+        public void AddCampaign(WorldState campaign)
+        {
+            Campaigns.Add(campaign);
+            foreach (var region in campaign.Regions.Values)
+            {
+                string pathKey = $"{region.RegionId}_{region.CurrentPath}";
+                if (!PathOccurrences.ContainsKey(pathKey))
+                    PathOccurrences[pathKey] = 0;
+                PathOccurrences[pathKey]++;
+            }
+        }
+
+        public void AddCampaign(WorldCampaign campaign)
+        {
+            AddCampaign(campaign.World);
+        }
+
+        public double CalculateNovelty(WorldState newCampaign)
+        {
+            if (Campaigns.Count == 0)
+                return 1.0;
+
+            double noveltyScore = 0;
+            int comparisonCount = 0;
+            foreach (var region in newCampaign.Regions.Values)
+            {
+                string pathKey = $"{region.RegionId}_{region.CurrentPath}";
+                int occurrences = PathOccurrences.ContainsKey(pathKey) ? PathOccurrences[pathKey] : 0;
+                double regionNovelty = 1.0 - (Math.Min(occurrences, Campaigns.Count) / (double)Campaigns.Count);
+                noveltyScore += regionNovelty;
+                comparisonCount++;
+            }
+            return comparisonCount > 0 ? noveltyScore / comparisonCount : 1.0;
+        }
+
+        public double CalculateNovelty(WorldCampaign newCampaign)
+        {
+            return CalculateNovelty(newCampaign.World);
+        }
+
+        public string GenerateReport()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"=== Novelty Report ({Campaigns.Count} campaigns) ===\n");
+            sb.AppendLine("Path Occurrence Distribution:");
+            foreach (var kvp in PathOccurrences.OrderByDescending(kvp => kvp.Value))
+            {
+                double frequency = kvp.Value / (double)Campaigns.Count;
+                sb.AppendLine($"  {kvp.Key}: {kvp.Value} occurrences ({frequency:P1})");
+            }
+            sb.AppendLine($"\nUnique Paths Generated: {PathOccurrences.Count} / 28 possible");
+            return sb.ToString();
+        }
+    }
+
+    public static class ItemRegistry
+    {
+        public static readonly List<ItemDefinition> AllItems = new()
+        {
+            new ItemDefinition { Id = "IronOre", Name = "Iron Ore", Category = "Material", BaseValue = 8 },
+            new ItemDefinition { Id = "IronIngot", Name = "Iron Ingot", Category = "Material", BaseValue = 22 },
+            new ItemDefinition { Id = "Herb", Name = "Healing Herb", Category = "Consumable", BaseValue = 5 },
+            new ItemDefinition { Id = "FreshFish", Name = "Fresh Fish", Category = "Food", BaseValue = 4 },
+            new ItemDefinition { Id = "AncientRelic", Name = "Ancient Relic", Category = "Artifact", BaseValue = 60 },
+            new ItemDefinition { Id = "RumorFragment", Name = "Rumor Fragment", Category = "Story", BaseValue = 0 }
+        };
+
+        public static ItemDefinition GetItem(string id) => AllItems.First(item => item.Id == id);
+    }
+
+    public static class FactionRegistry
+    {
+        public static readonly List<FactionState> AllFactions = new()
+        {
+            new FactionState { Type = FactionType.Merchants, Name = "Merchant Guild", Influence = 50, Reputation = 0, HasCamp = false },
+            new FactionState { Type = FactionType.Rangers, Name = "Forest Rangers", Influence = 30, Reputation = 0, HasCamp = true },
+            new FactionState { Type = FactionType.Bandits, Name = "Bandit Clan", Influence = 25, Reputation = -10, HasCamp = true },
+            new FactionState { Type = FactionType.Mages, Name = "Arcane Enclave", Influence = 35, Reputation = 0, HasCamp = false },
+            new FactionState { Type = FactionType.Miners, Name = "Mining Consortium", Influence = 28, Reputation = 0, HasCamp = false }
+        };
+    }
+
+    public static class ProgressionBarRegistry
+    {
+        public static readonly List<ProgressionBarDefinition> GlobalBarDefinitions = new()
+        {
+            new ProgressionBarDefinition
+            {
+                Id = "WorldStability",
+                Name = "World Stability",
+                Threshold = 100,
+                DecayAmount = 1.5,
+                MinValue = 0,
+                MaxValue = 150,
+                CheckFrequency = 4,
+                CanProgress = world => true,
+                OnComplete = world => world.Log(LogCategory.Simulation, "The world has stabilized around several factions."),
+                OnDecay = world => { }
+            }
+        };
+
+        public static readonly List<ProgressionBarDefinition> AllRegionBarDefinitions = new()
+        {
+            new ProgressionBarDefinition
+            {
+                Id = "BanditClearance",
+                Name = "Bandit Clearance",
+                Threshold = 75,
+                DecayAmount = 2.5,
+                MinValue = 0,
+                MaxValue = 100,
+                CheckFrequency = 2,
+                CanProgress = world => true,
+                OnComplete = world => world.Log(LogCategory.Simulation, "A region has cleared enough bandits to secure a new route."),
+                OnDecay = world => { }
+            }, 
+            new ProgressionBarDefinition
+            {
+                Id = "MagicalAwareness",
+                Name = "Magical Awareness",
+                Threshold = 60,
+                DecayAmount = 1.8,
+                MinValue = 0,
+                MaxValue = 100,
+                CheckFrequency = 3,
+                CanProgress = world => true,
+                OnComplete = world => world.Log(LogCategory.Simulation, "Arcane activity has become visible across the region."),
+                OnDecay = world => { }
+            }
+        };
+    }
+
+    public static class ZoneEvolutionBarRegistry
+    {
+        public static readonly Dictionary<RegionId, List<ZoneEvolutionBarDefinition>> BarsByRegion = new()
+        {
+            {
+                RegionId.NorthernRealm,
+                new()
+                {
+                    new ZoneEvolutionBarDefinition
+                    {
+                        Id = "EternalWinter",
+                        Name = "Eternal Winter",
+                        Description = "The realm freezes. Blizzards rage. Life retreats.",
+                        MinValue = 0,
+                        MaxValue = 100,
+                        StartingValue = 0,
+                        DecayAmount = 0.3,
+                        OnMilestoneReached = (world, milestone) => { },
+                        OnMaxReached = (world) => world?.Log(LogCategory.Simulation, "[WORLD] Northern Realm succumbs to Eternal Winter!")
+                    },
+                    new ZoneEvolutionBarDefinition
+                    {
+                        Id = "AgeOfBandits",
+                        Name = "Age of Bandits",
+                        Description = "Lawlessness spreads. Brigands control the roads.",
+                        MinValue = 0,
+                        MaxValue = 100,
+                        StartingValue = 0,
+                        DecayAmount = 0.4,
+                        OnMilestoneReached = (world, milestone) => { },
+                        OnMaxReached = (world) => world?.Log(LogCategory.Simulation, "[WORLD] Northern Realm falls into the Age of Bandits!")
+                    },
+                    new ZoneEvolutionBarDefinition
+                    {
+                        Id = "UndeadPower",
+                        Name = "Undead Power",
+                        Description = "Death stirs. Tombs crack open. The living are few.",
+                        MinValue = 0,
+                        MaxValue = 100,
+                        StartingValue = 0,
+                        DecayAmount = 0.2,
+                        OnMilestoneReached = (world, milestone) => { },
+                        OnMaxReached = (world) => world?.Log(LogCategory.Simulation, "[WORLD] Northern Realm becomes an Undead Realm!")
+                    },
+                    new ZoneEvolutionBarDefinition
+                    {
+                        Id = "DivineOrder",
+                        Name = "Divine Order",
+                        Description = "Faith strengthens. Temples rise. Civilization flourishes.",
+                        MinValue = 0,
+                        MaxValue = 100,
+                        StartingValue = 0,
+                        DecayAmount = 0.5,
+                        OnMilestoneReached = (world, milestone) => { },
+                        OnMaxReached = (world) => world?.Log(LogCategory.Simulation, "[WORLD] Northern Realm ascends under Divine Order!")
+                    }
+                }
+            }
+        };
+
+        public static List<ZoneEvolutionBarDefinition> GetBarsForRegion(RegionId regionId)
+        {
+            return BarsByRegion.TryGetValue(regionId, out var bars) ? bars : new();
+        }
+    }
+
+    public static class EncounterRegistry
+    {
+        public static readonly List<EncounterDefinition> AllEncounters = new()
+        {
+            new EncounterDefinition
+            {
+                Id = "BanditAmbush",
+                Name = "Bandit Ambush",
+                Summary = "A group of bandits jumps out from cover and demands your valuables.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome != BiomeType.Arcane,
+                Weight = world => 1.0 + world.Factions[FactionType.Bandits].Influence / 50.0,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Fight the bandits.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.65))
+                            {
+                                world.Factions[FactionType.Bandits].Influence -= 5;
+                                world.ModifyReputation(FactionType.Rangers, 1.0);
+                                world.Player.AddItem("IronOre", 1);
+                                return new EncounterResult { Message = "You defeat the bandits and recover spoils.", Success = true, PlayerVisible = true };
+                            }
+
+                            world.Player.Damage(15);
+                            return new EncounterResult { Message = "The bandits wound you before slipping away.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Pay them off.",
+                        Execute = world =>
+                        {
+                            double toll = 12;
+                            if (world.Player.SpendGold(toll))
+                            {
+                                world.Factions[FactionType.Bandits].Influence += 3;
+                                return new EncounterResult { Message = $"You pay {toll:F0} gold and the bandits let you pass.", Success = true, PlayerVisible = true };
+                            }
+                            return new EncounterResult { Message = "You have no gold to pay. The bandits attack.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Attempt to flee.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.45))
+                            {
+                                return new EncounterResult { Message = "You escape the ambush but leave your pride behind.", Success = true, PlayerVisible = true };
+                            }
+                            world.Player.Damage(10);
+                            return new EncounterResult { Message = "You stumble while fleeing and take damage.", Success = false, PlayerVisible = true };
+                        }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "TravellingMerchant",
+                Name = "Travelling Merchant",
+                Summary = "A wandering merchant offers rare goods for trade.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => true,
+                Weight = world => world.Regions[world.Player.CurrentRegion].Definition.HasTown ? 0.8 : 1.2,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Buy a useful trinket.",
+                        Execute = world =>
+                        {
+                            var item = ItemRegistry.GetItem("AncientRelic");
+                            double price = world.Economy.MarketPrices[item.Id] * 0.9;
+                            if (world.Player.SpendGold(price))
+                            {
+                                world.Player.AddItem(item.Id, 1);
+                                return new EncounterResult { Message = $"You buy {item.Name} for {price:F0} gold.", Success = true, PlayerVisible = true };
+                            }
+                            return new EncounterResult { Message = "You cannot afford the vendor's price.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Trade information.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Merchants] += 1.2;
+                            return new EncounterResult { Message = "You share news and gain favor with the merchant guild.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Move on quietly.",
+                        Execute = world => new EncounterResult { Message = "You leave the merchant to their own business.", Success = true, PlayerVisible = true }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "AbandonedShrine",
+                Name = "Abandoned Shrine",
+                Summary = "A forgotten shrine lies hidden in the wilds.",
+                Difficulty = EncounterDifficulty.Rare,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome == BiomeType.Forest && world.Rng.Probability(0.4),
+                Weight = world => 0.6,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Offer a prayer.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Clergy] += 2.0;
+                            world.ProgressionBars["WorldStability"].AddProgress(8);
+                            return new EncounterResult { Message = "The shrine's blessing settles over you.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Search for treasure.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.5))
+                            {
+                                world.Player.AddItem("AncientRelic", 1);
+                                return new EncounterResult { Message = "You uncover an old relic behind the altar.", Success = true, PlayerVisible = true };
+                            }
+                            return new EncounterResult { Message = "The shrine turns up only dust and old prayers.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Leave the shrine undisturbed.",
+                        Execute = world => new EncounterResult { Message = "You step away quietly, leaving the site untouched.", Success = true, PlayerVisible = true }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "MinerConvoy",
+                Name = "Miner Convoy",
+                Summary = "A convoy of miners passes through with goods and news.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome == BiomeType.Mountain,
+                Weight = world => 0.9,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Buy ore supplies.",
+                        Execute = world =>
+                        {
+                            var item = ItemRegistry.GetItem("IronOre");
+                            double price = world.Economy.MarketPrices[item.Id] * 0.8;
+                            if (world.Player.SpendGold(price))
+                            {
+                                world.Player.AddItem(item.Id, 2);
+                                return new EncounterResult { Message = $"You secure {item.Name} for {price:F0} gold.", Success = true, PlayerVisible = true };
+                            }
+                            return new EncounterResult { Message = "You cannot afford their supplies.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Offer help clearing a monster nest.",
+                        Execute = world =>
+                        {
+                            world.GetCurrentRegionProgressionBar("BanditClearance")?.AddProgress(10);
+                            world.ModifyReputation(FactionType.Miners, 1.8);
+                            return new EncounterResult { Message = "The miners thank you and spread word of your deeds.", Success = true, PlayerVisible = true };
+                        }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "MysticRuins",
+                Name = "Mystic Ruins",
+                Summary = "Ancient arcane ruins appear along your path, resonating with magical energy.",
+                Difficulty = EncounterDifficulty.Rare,
+                RelatedQuestId = "StudyMysticRuins",
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome == BiomeType.Arcane && world.Rng.Probability(0.4),
+                Weight = world => 1.4,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Study the runes at the gate.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Mages] += 2.5;
+                            world.GetCurrentRegionProgressionBar("MagicalAwareness")?.AddProgress(20);
+                            return new EncounterResult { Message = "Your research unlocks hidden arcane knowledge.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Collect mystical samples.",
+                        Execute = world =>
+                        {
+                            world.Player.AddItem("AncientRelic", 1);
+                            world.GetCurrentRegionProgressionBar("MagicalAwareness")?.AddProgress(8);
+                            return new EncounterResult { Message = "You gather rare samples that may be useful later.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Leave the ruins intact.",
+                        Execute = world => new EncounterResult { Message = "You decide not to disturb the ruins further.", Success = true, PlayerVisible = true }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "BanditStronghold",
+                Name = "Bandit Stronghold",
+                Summary = "Your quest leads you to a bandit stronghold that threatens the region.",
+                Difficulty = EncounterDifficulty.Elite,
+                RelatedQuestId = "ClearBanditCamp",
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome != BiomeType.Arcane,
+                Weight = world => 1.6,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Storm the camp with force.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.55))
+                            {
+                                world.GetCurrentRegionProgressionBar("BanditClearance")?.AddProgress(35);
+                                world.ModifyReputation(FactionType.Rangers, 2.5);
+                                return new EncounterResult { Message = "You rout the bandits and secure the camp.", Success = true, PlayerVisible = true };
+                            }
+                            world.Player.Damage(20);
+                            return new EncounterResult { Message = "The bandits repel you and you are forced to retreat.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Sneak in to sabotage their supplies.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.65))
+                            {
+                                world.GetCurrentRegionProgressionBar("BanditClearance")?.AddProgress(20);
+                                return new EncounterResult { Message = "You cripple their supplies and weaken the stronghold.", Success = true, PlayerVisible = true };
+                            }
+                            world.Player.Damage(15);
+                            return new EncounterResult { Message = "You are spotted and barely escape with your life.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Parley with the bandit leader.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.5))
+                            {
+                                world.GetCurrentRegionProgressionBar("BanditClearance")?.AddProgress(15);
+                                world.ModifyReputation(FactionType.Bandits, 1.0);
+                                return new EncounterResult { Message = "You broker a temporary peace and the threat subsides.", Success = true, PlayerVisible = true };
+                            }
+                            world.Player.Damage(10);
+                            return new EncounterResult { Message = "Negotiations fail and the bandits attack.", Success = false, PlayerVisible = true };
+                        }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "MysticAnomaly",
+                Name = "Mystic Anomaly",
+                Summary = "Strange energies ripple near a hidden stone circle.",
+                Difficulty = EncounterDifficulty.Rare,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome == BiomeType.Arcane && world.Rng.Probability(0.25),
+                Weight = world => 0.4,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Study the anomaly.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Mages] += 2.5;
+                            world.GetCurrentRegionProgressionBar("MagicalAwareness")?.AddProgress(12);
+                            return new EncounterResult { Message = "You feel the world shift around the mana-rich locus.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Avoid the danger.",
+                        Execute = world => new EncounterResult { Message = "You decide the anomaly is best left alone.", Success = true, PlayerVisible = true }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "RefugeeCaravan",
+                Name = "Refugee Caravan",
+                Summary = "A caravan of refugees seeks safety and assistance.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.HasTown,
+                Weight = world => 0.7,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Help them and donate supplies.",
+                        Execute = world =>
+                        {
+                            if (world.Player.Inventory.TryGetValue("FreshFish", out var quantity) && quantity > 0)
+                            {
+                                world.Player.Inventory["FreshFish"] -= 1;
+                                world.ModifyReputation(FactionType.Clergy, 2.0);
+                                return new EncounterResult { Message = "Your aid earns gratitude and new allies.", Success = true, PlayerVisible = true };
+                            }
+                            return new EncounterResult { Message = "You lack supplies to help the refugees.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Direct them to a safer route.",
+                        Execute = world => new EncounterResult { Message = "You guide them away from danger. They leave with hope.", Success = true, PlayerVisible = true }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Ask them for news instead.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Merchants] += 0.8;
+                            return new EncounterResult { Message = "They share rumors of a hidden road and payment for your discretion.", Success = true, PlayerVisible = true };
+                        }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "StrandedMerchant",
+                Name = "Stranded Merchant",
+                Summary = "A trader is stranded after a broken wagon and needs aid.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => true,
+                Weight = world => 0.9,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Repair the wagon and help the merchant.",
+                        Execute = world =>
+                        {
+                            if (world.Player.Inventory.TryGetValue("IronIngot", out var count) && count > 0)
+                            {
+                                world.Player.Inventory["IronIngot"] -= 1;
+                                world.Player.Gold += 15;
+                                world.ModifyReputation(FactionType.Merchants, 1.5);
+                                return new EncounterResult { Message = "The merchant rewards you and promises to sing your name to traders.", Success = true, PlayerVisible = true };
+                            }
+                            return new EncounterResult { Message = "You lack the materials to help repair the wagon.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Offer to escort them to the next town for a fee.",
+                        Execute = world =>
+                        {
+                            world.Player.Gold += 25;
+                            world.ModifyReputation(FactionType.Merchants, 0.5);
+                            return new EncounterResult { Message = "They pay for your protection and ask about the safest path ahead.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Take advantage and steal their cargo.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.4))
+                            {
+                                world.Player.AddItem("AncientRelic", 1);
+                                world.ModifyReputation(FactionType.Bandits, 1.0);
+                                return new EncounterResult { Message = "You slip away with a valuable item, but you're marked by the road.", Success = true, PlayerVisible = true };
+                            }
+                            world.Player.Damage(10);
+                            return new EncounterResult { Message = "The merchant fights back and you are hurt in the struggle.", Success = false, PlayerVisible = true };
+                        }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "WoundedBeast",
+                Name = "Wounded Beast",
+                Summary = "A great beast lies injured and thrashes in pain.",
+                Difficulty = EncounterDifficulty.Elite,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome is BiomeType.Forest or BiomeType.Swamp or BiomeType.Mountain,
+                Weight = world => 0.8,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Calm the beast and tend its wounds.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Rangers] += 2.0;
+                            world.GetCurrentRegionProgressionBar("BanditClearance")?.AddProgress(5);
+                            return new EncounterResult { Message = "The beast calms and you earn the respect of local hunters.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Put it out of its misery.",
+                        Execute = world =>
+                        {
+                            world.Player.Damage(20);
+                            world.Player.AddItem("FreshFish", 1);
+                            return new EncounterResult { Message = "The beast dies painfully, but you salvage some food.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Leave it and sneak away quietly.",
+                        Execute = world => new EncounterResult { Message = "You leave the creature to fate and continue on your path.", Success = true, PlayerVisible = true }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "AncientMechanism",
+                Name = "Ancient Mechanism",
+                Summary = "A forgotten device hums with latent energy.",
+                Difficulty = EncounterDifficulty.Rare,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome is BiomeType.Desert or BiomeType.Arcane,
+                Weight = world => 0.5,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Attempt to activate the mechanism.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.45))
+                            {
+                                world.GetCurrentRegionProgressionBar("MagicalAwareness")?.AddProgress(15);
+                                return new EncounterResult { Message = "The mechanism surges to life and reveals a hidden archive.", Success = true, PlayerVisible = true };
+                            }
+                            world.Player.Damage(15);
+                            return new EncounterResult { Message = "A shockwave knocks you backwards and you barely escape.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Study the runes from a distance.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Mages] += 1.8;
+                            world.GetCurrentRegionProgressionBar("MagicalAwareness")?.AddProgress(6);
+                            return new EncounterResult { Message = "You glean insight into the ancient magic without disturbing it.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Seal the mechanism and move on.",
+                        Execute = world => new EncounterResult { Message = "You leave the artifact undisturbed, choosing caution over curiosity.", Success = true, PlayerVisible = true }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "FestivalOfLights",
+                Name = "Festival of Lights",
+                Summary = "A local festival brightens the streets with song and flame.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.HasTown,
+                Weight = world => 0.6,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Join the festival and celebrate.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Merchants] += 1.0;
+                            world.ProgressionBars["WorldStability"].AddProgress(5);
+                            return new EncounterResult { Message = "The townsfolk welcome you, and your heart grows lighter.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Listen for secret gossip.",
+                        Execute = world =>
+                        {
+                            world.Player.AddItem("RumorFragment", 1);
+                            return new EncounterResult { Message = "You overhear valuable rumors about the surrounding regions.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Steal a decorative charm from the market.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.5))
+                            {
+                                world.Player.AddItem("AncientRelic", 1);
+                                return new EncounterResult { Message = "You slip away with a charm, unaware of the watchful crowd.", Success = true, PlayerVisible = true };
+                            }
+                            world.Player.Damage(5);
+                            return new EncounterResult { Message = "Guards spot you and you are driven away with bruises.", Success = false, PlayerVisible = true };
+                        }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "TravelersDuel",
+                Name = "Traveler's Duel",
+                Summary = "Two seasoned travelers are challenging each other to a test of skill.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome is BiomeType.Mountain or BiomeType.Arcane,
+                Weight = world => 0.7,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Cheer for the combatants and stay out of it.",
+                        Execute = world => new EncounterResult { Message = "You watch the duel and appreciate the artistry.", Success = true, PlayerVisible = true }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Bet on the underdog.",
+                        Execute = world =>
+                        {
+                            if (world.Rng.Probability(0.5))
+                            {
+                                world.Player.Gold += 20;
+                                return new EncounterResult { Message = "Your chosen fighter wins, and you collect your winnings.", Success = true, PlayerVisible = true };
+                            }
+                            world.Player.Gold -= 10;
+                            return new EncounterResult { Message = "Your bet fails and you lose some coin.", Success = false, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Offer to train the loser.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Rangers] += 1.2;
+                            return new EncounterResult { Message = "The loser thanks you and whispers of a hidden hunting trail.", Success = true, PlayerVisible = true };
+                        }
+                    }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "MysteriousVisage",
+                Name = "Mysterious Visage",
+                Summary = "A hooded stranger offers you a glimpse into a possible future.",
+                Difficulty = EncounterDifficulty.Rare,
+                CanOccur = world => world.Rng.Probability(0.2),
+                Weight = world => 0.4,
+                Options = new List<EncounterOption>
+                {
+                    new EncounterOption
+                    {
+                        Description = "Accept the vision.",
+                        Execute = world =>
+                        {
+                            world.Player.Reputation[FactionType.Mages] += 1.5;
+                            world.ProgressionBars["WorldStability"].AddProgress(3);
+                            return new EncounterResult { Message = "You glimpse a possible future and feel both awe and unease.", Success = true, PlayerVisible = true };
+                        }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Refuse politely and move on.",
+                        Execute = world => new EncounterResult { Message = "The stranger nods and melts back into the crowd.", Success = true, PlayerVisible = true }
+                    },
+                    new EncounterOption
+                    {
+                        Description = "Demand to know the price.",
+                        Execute = world =>
+                        {
+                            double price = 15;
+                            if (world.Player.SpendGold(price))
+                            {
+                                world.Player.Reputation[FactionType.Mages] += 2.0;
+                                return new EncounterResult { Message = $"You pay {price:F0} gold and the stranger reveals a strange prophecy.", Success = true, PlayerVisible = true };
+                            }
+                            return new EncounterResult { Message = "You do not have enough gold to learn the full truth.", Success = false, PlayerVisible = true };
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    public static class LongTermEventRegistry
+    {
+        public static readonly List<LongTermEventDefinition> AllEvents = new()
+        {
+            new LongTermEventDefinition
+            {
+                Id = "DragonAwakening",
+                Name = "Dragon Awakening",
+                Condition = world =>
+                    world.ProgressionBars.TryGetValue("MagicalAwareness", out var arcaneBar)
+                    && arcaneBar.Value >= 60
+                    && world.Regions.Values.Count(r => r.CurrentTier >= WorldTier.Tier3) >= 1,
+                OnTrigger = world =>
+                {
+                    world.Log(LogCategory.Player, "A powerful dragon stirs in the high mountains.");
+                    if (world.Regions.TryGetValue(RegionId.Highlands, out var region))
+                    {
+                        region.CurrentPath = EvolutionPath.DragonRoost;
+                        region.CurrentTier = WorldTier.Tier3;
+                    }
+                }
+            }
+        };
+    }
+
+    public static class QuestLineRegistry
+    {
+        public static readonly List<QuestLineDefinition> AllQuestLines = new()
+        {
+            new QuestLineDefinition
+            {
+                Id = "MerchantGuild",
+                Title = "Merchant Guild Ascendant",
+                Description = "Support merchant trade and build prosperity throughout the realm.",
+                CanStart = world => true,
+                PrerequisiteQuestLineIds = new(),
+                QuestIds = new() { "RepairMerchantCart", "EscortMerchant", "InvestigateAttacks", "DestroyBanditCamp", "DefendCaravan" },
+                FinalReward = new QuestReward
+                {
+                    Gold = 200,
+                    ReputationChanges = new() { { FactionType.Merchants, 20 } },
+                    UnlockedQuestLineIds = new() { "TradeExpansion" }
+                }
+            },
+            new QuestLineDefinition
+            {
+                Id = "TradeExpansion",
+                Title = "Trade Expansion",
+                Description = "Expand trade networks and establish new merchant routes.",
+                CanStart = world => true,
+                PrerequisiteQuestLineIds = new() { "MerchantGuild" },
+                QuestIds = new() { "SupplyDistrict", "SecureRoute", "BuildTradingPost" },
+                FinalReward = new QuestReward
+                {
+                    Gold = 150,
+                    ReputationChanges = new() { { FactionType.Merchants, 15 } }
+                }
+            },
+            new QuestLineDefinition
+            {
+                Id = "ClericTraining",
+                Title = "Clerical Vocation",
+                Description = "Aid the temple in training a new generation of clerics and priests.",
+                CanStart = world => true,
+                PrerequisiteQuestLineIds = new(),
+                QuestIds = new() { "CollectHolyRelics", "TrainNovices", "DefendTemple" },
+                FinalReward = new QuestReward
+                {
+                    Gold = 120,
+                    ReputationChanges = new() { { FactionType.Clergy, 15 } }
+                }
+            },
+            new QuestLineDefinition
+            {
+                Id = "RangerRecruit",
+                Title = "The Ranger's Path",
+                Description = "Join the rangers and protect travelers from wilderness dangers.",
+                CanStart = world => true,
+                PrerequisiteQuestLineIds = new(),
+                QuestIds = new() { "HuntWildbeasts", "PatrolTradRoutes", "EliminateBandits" },
+                FinalReward = new QuestReward
+                {
+                    Gold = 140,
+                    ReputationChanges = new() { { FactionType.Rangers, 18 } }
+                }
+            },
+            new QuestLineDefinition
+            {
+                Id = "FarmingSupport",
+                Title = "Harvest Moon",
+                Description = "Support the local farmers and ensure a bountiful harvest.",
+                CanStart = world => true,
+                PrerequisiteQuestLineIds = new(),
+                QuestIds = new() { "HelpWithHarvest", "RepairFarmEquipment", "ProtectFromWildlife" },
+                FinalReward = new QuestReward
+                {
+                    Gold = 100,
+                    ReputationChanges = new() { { FactionType.Merchants, 12 } }
+                }
+            }
+        };
+    }
+
+    public static class SettlementRegistry
+    {
+        public static readonly List<SettlementDefinition> AllSettlements = new()
+        {
+            new SettlementDefinition
+            {
+                Id = "StoneHaven",
+                Name = "Stone Haven",
+                Type = "Town",
+                Region = RegionId.NorthernRealm,
+                PopulationStart = 45,
+                WealthStart = 60,
+                SafetyStart = 70,
+                InitialBuildings = new() { "Tavern", "Blacksmith", "Market" },
+                InitialQuestLineIds = new() { "MerchantGuild" },
+                Properties = new() { { "HasMarketplace", true }, { "HasInn", true }, { "HasSmith", true } }
+            },
+            new SettlementDefinition
+            {
+                Id = "SilverStream",
+                Name = "Silver Stream",
+                Type = "Village",
+                Region = RegionId.NorthernRealm,
+                PopulationStart = 25,
+                WealthStart = 40,
+                SafetyStart = 50,
+                InitialBuildings = new() { "Farm", "Mill" },
+                InitialQuestLineIds = new() { "FarmingSupport" },
+                Properties = new() { { "HasFarm", true }, { "HasMill", true } }
+            },
+            new SettlementDefinition
+            {
+                Id = "CrossRoads",
+                Name = "Crossroads",
+                Type = "Village",
+                Region = RegionId.NorthernRealm,
+                PopulationStart = 35,
+                WealthStart = 50,
+                SafetyStart = 45,
+                InitialBuildings = new() { "Inn", "Stables" },
+                InitialQuestLineIds = new() { "RangerRecruit" },
+                Properties = new() { { "HasInn", true }, { "HasStables", true } }
+            },
+            new SettlementDefinition
+            {
+                Id = "HolyTemple",
+                Name = "Holy Temple",
+                Type = "Monastery",
+                Region = RegionId.NorthernRealm,
+                PopulationStart = 20,
+                WealthStart = 55,
+                SafetyStart = 80,
+                InitialBuildings = new() { "Temple", "Library" },
+                InitialQuestLineIds = new() { "ClericTraining" },
+                Properties = new() { { "HasTemple", true }, { "HasLibrary", true } }
+            }
+        };
+    }
+
+    public static class EventBarRegistry
+    {
+        public static readonly List<EventBarDefinition> AllEventBars = new()
+        {
+            // ===== MERCHANT ACTIVITY =====
+            new EventBarDefinition
+            {
+                Id = "MerchantCaravan",
+                Name = "Merchant Caravan Activity",
+                Description = "Trade caravans traverse the roads bringing wealth and goods.",
+                Category = "MerchantActivity",
+                StartingValue = 0,
+                DecayAmount = 0.12,
+                Threshold = 60,
+                MinValue = 0,
+                MaxValue = 100,
+                CheckFrequency = 3,
+                PrerequisiteEventBarIds = new(),
+                CooldownTurns = 20,
+                Repeatable = true,
+                CanProgress = world => true,
+                OnCompletion = new EventBarCompletion
+                {
+                    UnlockedEncounterIds = new() { "TravellingMerchant" },
+                    ZoneEvolutionInfluences = new() { ("DivineOrder", 4) },
+                    SettlementModifications = new() { ("StoneHaven", "Wealth", 8), ("StoneHaven", "Population", 3) }
+                }
+            },
+            // ===== BANDIT ACTIVITY =====
+            new EventBarDefinition
+            {
+                Id = "BanditPatrol",
+                Name = "Bandit Patrol Activity",
+                Description = "Small groups of bandits roam the roads, threatening merchants.",
+                Category = "BanditActivity",
+                StartingValue = 5,
+                DecayAmount = 0.18,
+                Threshold = 50,
+                MinValue = 0,
+                MaxValue = 100,
+                CheckFrequency = 2,
+                PrerequisiteEventBarIds = new(),
+                CooldownTurns = 15,
+                Repeatable = true,
+                CanProgress = world => true,
+                OnCompletion = new EventBarCompletion
+                {
+                    UnlockedEncounterIds = new() { "BanditAmbush" },
+                    ZoneEvolutionInfluences = new() { ("AgeOfBandits", 6) },
+                    SettlementModifications = new() { ("StoneHaven", "Safety", -5), ("SilverStream", "Safety", -8) }
+                }
+            },
+            // ===== RELIGIOUS ACTIVITY =====
+            new EventBarDefinition
+            {
+                Id = "TempleActivity",
+                Name = "Temple Activity",
+                Description = "Religious institutions grow in influence and prestige.",
+                Category = "Religion",
+                StartingValue = 0,
+                DecayAmount = 0.1,
+                Threshold = 70,
+                MinValue = 0,
+                MaxValue = 100,
+                CheckFrequency = 4,
+                PrerequisiteEventBarIds = new(),
+                CooldownTurns = 25,
+                Repeatable = true,
+                CanProgress = world => true,
+                OnCompletion = new EventBarCompletion
+                {
+                    UnlockedQuestLineIds = new() { "ClericTraining" },
+                    ZoneEvolutionInfluences = new() { ("DivineOrder", 9) },
+                    SettlementModifications = new() { ("HolyTemple", "Wealth", 5) }
+                }
+            },
+            // ===== RANGER ACTIVITY =====
+            new EventBarDefinition
+            {
+                Id = "RangerActivity",
+                Name = "Ranger Activity",
+                Description = "Rangers patrol the wilderness, protecting travelers and maintaining order.",
+                Category = "Law",
+                StartingValue = 0,
+                DecayAmount = 0.1,
+                Threshold = 50,
+                MinValue = 0,
+                MaxValue = 100,
+                CheckFrequency = 3,
+                PrerequisiteEventBarIds = new(),
+                CooldownTurns = 18,
+                Repeatable = true,
+                CanProgress = world => true,
+                OnCompletion = new EventBarCompletion
+                {
+                    UnlockedQuestLineIds = new() { "RangerRecruit" },
+                    ZoneEvolutionInfluences = new() { ("DivineOrder", 5) },
+                    SettlementModifications = new() { ("CrossRoads", "Safety", 10) }
+                }
+            },
+            // ===== FARMING CONCERNS =====
+            new EventBarDefinition
+            {
+                Id = "FarmersNeed",
+                Name = "Farmers' Concerns",
+                Description = "Local farmers require aid with crops, tools, and protection.",
+                Category = "Agriculture",
+                StartingValue = 0,
+                DecayAmount = 0.08,
+                Threshold = 55,
+                MinValue = 0,
+                MaxValue = 100,
+                CheckFrequency = 4,
+                PrerequisiteEventBarIds = new(),
+                CooldownTurns = 20,
+                Repeatable = true,
+                CanProgress = world => true,
+                OnCompletion = new EventBarCompletion
+                {
+                    UnlockedQuestLineIds = new() { "FarmingSupport" },
+                    ZoneEvolutionInfluences = new() { ("DivineOrder", 3) },
+                    SettlementModifications = new() { ("SilverStream", "Population", 5), ("SilverStream", "Wealth", 4) }
+                }
+            },
+            // ===== WILDLIFE ENCROACHMENT =====
+            new EventBarDefinition
+            {
+                Id = "WildlifeEncroach",
+                Name = "Wildlife Encroachment",
+                Description = "Animals encroach on settlements, threatening livestock and crops.",
+                Category = "Nature",
+                StartingValue = 0,
+                DecayAmount = 0.12,
+                Threshold = 40,
+                MinValue = 0,
+                MaxValue = 100,
+                CheckFrequency = 2,
+                PrerequisiteEventBarIds = new(),
+                CooldownTurns = 12,
+                Repeatable = true,
+                CanProgress = world => true,
+                OnCompletion = new EventBarCompletion
+                {
+                    UnlockedEncounterIds = new() { "WildBeast" },
+                    ZoneEvolutionInfluences = new() { ("AgeOfBandits", -2) },
+                    SettlementModifications = new() { ("SilverStream", "Wealth", -4) }
+                }
+            }
+        };
+    }
+
+    public static class QuestRegistry
+    {
+        public static readonly List<QuestDefinition> AllQuests = new()
+        {
+            // ===== MERCHANT GUILD QUESTLINE =====
+            new QuestDefinition
+            {
+                Id = "RepairMerchantCart",
+                Title = "Repair a Merchant's Cart",
+                Description = "A merchant's cart has broken down. Use your skill to repair it.",
+                CanStart = world => true,
+                RequiredEncounterIds = new() { "StrandedMerchant" },
+                Reward = new QuestReward { Gold = 25, ReputationChanges = new() { { FactionType.Merchants, 3 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "MerchantCaravan", Amount = 5 } },
+                ZoneEvolutionEffects = new() { ("DivineOrder", 1) }
+            },
+            new QuestDefinition
+            {
+                Id = "EscortMerchant",
+                Title = "Escort the Merchant Caravan",
+                Description = "Protect a merchant caravan on a dangerous journey.",
+                CanStart = world => true,
+                RequiredEncounterIds = new() { "TravellingMerchant" },
+                Reward = new QuestReward { Gold = 45, ReputationChanges = new() { { FactionType.Merchants, 5 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "MerchantCaravan", Amount = 8 } }
+            },
+            new QuestDefinition
+            {
+                Id = "InvestigateAttacks",
+                Title = "Investigate Caravan Attacks",
+                Description = "Find the source of attacks on trade routes.",
+                CanStart = world => true,
+                RequiredEncounterIds = new() { "BanditAmbush" },
+                Reward = new QuestReward { Gold = 55, ReputationChanges = new() { { FactionType.Rangers, 4 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "BanditPatrol", Amount = -10 } }
+            },
+            new QuestDefinition
+            {
+                Id = "DestroyBanditCamp",
+                Title = "Destroy the Bandit Camp",
+                Description = "Dismantle the bandit stronghold threatening merchants.",
+                CanStart = world => true,
+                RequiredEncounterIds = new() { "BanditStronghold" },
+                Reward = new QuestReward { Gold = 80, ReputationChanges = new() { { FactionType.Rangers, 8 }, { FactionType.Merchants, 6 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "BanditPatrol", Amount = -20 } },
+                ZoneEvolutionEffects = new() { ("AgeOfBandits", -5) }
+            },
+            new QuestDefinition
+            {
+                Id = "DefendCaravan",
+                Title = "Defend the Settler Caravan",
+                Description = "Protect a caravan of settlers under bandit attack.",
+                CanStart = world => true,
+                RequiredEncounterIds = new() { "BanditAmbush" },
+                Reward = new QuestReward { Gold = 120, ReputationChanges = new() { { FactionType.Merchants, 10 }, { FactionType.Rangers, 10 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "MerchantCaravan", Amount = 15 } }
+            },
+
+            // ===== TRADE EXPANSION QUESTLINE =====
+            new QuestDefinition
+            {
+                Id = "SupplyDistrict",
+                Title = "Supply the District",
+                Description = "Gather rare goods to supply the new district.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 60, ReputationChanges = new() { { FactionType.Merchants, 4 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "MerchantCaravan", Amount = 6 } }
+            },
+            new QuestDefinition
+            {
+                Id = "SecureRoute",
+                Title = "Secure the Trade Route",
+                Description = "Ensure a new trade route is safe for merchants.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 70, ReputationChanges = new() { { FactionType.Merchants, 5 }, { FactionType.Rangers, 5 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "RangerActivity", Amount = 8 }, new QuestEffect { BarId = "BanditPatrol", Amount = -5 } }
+            },
+            new QuestDefinition
+            {
+                Id = "BuildTradingPost",
+                Title = "Build the Trading Post",
+                Description = "Construct a new trading post to expand commerce.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 90, ReputationChanges = new() { { FactionType.Merchants, 8 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "MerchantCaravan", Amount = 12 } }
+            },
+
+            // ===== CLERICAL VOCATION QUESTLINE =====
+            new QuestDefinition
+            {
+                Id = "CollectHolyRelics",
+                Title = "Collect Holy Relics",
+                Description = "Gather sacred relics for the temple's treasury.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 50, ReputationChanges = new() { { FactionType.Clergy, 5 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "TempleActivity", Amount = 7 } }
+            },
+            new QuestDefinition
+            {
+                Id = "TrainNovices",
+                Title = "Train the Novices",
+                Description = "Help instruct new religious practitioners.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 55, ReputationChanges = new() { { FactionType.Clergy, 6 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "TempleActivity", Amount = 8 } }
+            },
+            new QuestDefinition
+            {
+                Id = "DefendTemple",
+                Title = "Defend the Temple",
+                Description = "Protect the temple from those who would defile it.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 75, ReputationChanges = new() { { FactionType.Clergy, 8 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "TempleActivity", Amount = 10 } }
+            },
+
+            // ===== RANGER RECRUIT QUESTLINE =====
+            new QuestDefinition
+            {
+                Id = "HuntWildbeasts",
+                Title = "Hunt the Wildbeasts",
+                Description = "Track and hunt dangerous animals threatening settlements.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 60, ReputationChanges = new() { { FactionType.Rangers, 5 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "RangerActivity", Amount = 6 }, new QuestEffect { BarId = "WildlifeEncroach", Amount = -8 } }
+            },
+            new QuestDefinition
+            {
+                Id = "PatrolTradRoutes",
+                Title = "Patrol Trade Routes",
+                Description = "Establish ranger patrols on the major trade routes.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 65, ReputationChanges = new() { { FactionType.Rangers, 6 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "RangerActivity", Amount = 8 }, new QuestEffect { BarId = "BanditPatrol", Amount = -6 } }
+            },
+            new QuestDefinition
+            {
+                Id = "EliminateBandits",
+                Title = "Eliminate the Bandit Threat",
+                Description = "Lead a decisive strike against organized bandit groups.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 85, ReputationChanges = new() { { FactionType.Rangers, 10 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "RangerActivity", Amount = 10 }, new QuestEffect { BarId = "BanditPatrol", Amount = -18 } }
+            },
+
+            // ===== FARMING SUPPORT QUESTLINE =====
+            new QuestDefinition
+            {
+                Id = "HelpWithHarvest",
+                Title = "Help with the Harvest",
+                Description = "Assist farmers in bringing in the autumn crop.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 35, ReputationChanges = new() { { FactionType.Merchants, 4 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "FarmersNeed", Amount = 7 } }
+            },
+            new QuestDefinition
+            {
+                Id = "RepairFarmEquipment",
+                Title = "Repair Farm Equipment",
+                Description = "Fix broken plows, tools, and other farm implements.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 40, ReputationChanges = new() { { FactionType.Merchants, 5 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "FarmersNeed", Amount = 8 } }
+            },
+            new QuestDefinition
+            {
+                Id = "ProtectFromWildlife",
+                Title = "Protect from Wildlife",
+                Description = "Guard fields and livestock from wild animal attacks.",
+                CanStart = world => true,
+                RequiredEncounterIds = new(),
+                Reward = new QuestReward { Gold = 55, ReputationChanges = new() { { FactionType.Merchants, 6 } } },
+                EventBarEffects = new() { new QuestEffect { BarId = "FarmersNeed", Amount = 10 }, new QuestEffect { BarId = "WildlifeEncroach", Amount = -12 } }
+            }
+        };
+    }
+}
+

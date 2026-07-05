@@ -4,481 +4,639 @@ using System.Linq;
 
 namespace PG.World.Simulation
 {
-    /// <summary>
-    /// Represents a world tier level (1-5).
-    /// </summary>
-    public enum WorldTier
+    public static class EncounterRegistry
     {
-        Tier1 = 1,
-        Tier2 = 2,
-        Tier3 = 3,
-        Tier4 = 4,
-        Tier5 = 5
-    }
-
-    /// <summary>
-    /// Unique identifier for a region.
-    /// </summary>
-    public enum RegionId
-    {
-        NorthernRealm = 0,
-        DarkForest = 1,
-        DesertKingdom = 2,
-        Swamp = 3,
-        Highlands = 4,
-        InfernalLands = 5,
-        ArcaneEmpire = 6
-    }
-
-    /// <summary>
-    /// Evolution paths available per region (4 per region).
-    /// </summary>
-    public enum EvolutionPath
-    {
-        // Northern Realm
-        AgeOfRaiders = 0,
-        EternalWinter = 1,
-        Ragnarok = 2,
-        UndeadNorth = 3,
-
-        // Dark Forest
-        PrimordialJungle = 4,
-        CorruptedAbyss = 5,
-        ElvenEnclave = 6,
-        CursedWildlands = 7,
-
-        // Desert Kingdom
-        AgeOfMerchants = 8,
-        AgeOfPharaohs = 9,
-        ElementalCatastrophe = 10,
-        ShadowAndSecrets = 11,
-
-        // Swamp
-        PrimordialBog = 12,
-        PlaguePestilence = 13,
-        MonsterDominion = 14,
-        MysticalAwakening = 15,
-
-        // Highlands
-        DwarvenProsperity = 16,
-        AsceticHermitage = 17,
-        DragonRoost = 18,
-        CorruptionBlight = 19,
-
-        // Infernal Lands
-        DemonicDominion = 20,
-        VolcanicCatastrophe = 21,
-        DemonicElementalFusion = 22,
-        EternalForge = 23,
-
-        // Arcane Empire
-        ArcaneAscendance = 24,
-        KnowledgeHoarding = 25,
-        TechnoMagicalSynthesis = 26,
-        CorruptionDecay = 27
-    }
-
-    /// <summary>
-    /// Represents a single region's state in the world.
-    /// </summary>
-    public class RegionState
-    {
-        public RegionId RegionId { get; set; }
-        public WorldTier CurrentTier { get; set; }
-        public EvolutionPath CurrentPath { get; set; }
-
-        public RegionState(RegionId regionId, WorldTier tier, EvolutionPath path)
+        public static readonly List<EncounterDefinition> AllEncounters = new()
         {
-            RegionId = regionId;
-            CurrentTier = tier;
-            CurrentPath = path;
-        }
-
-        public override string ToString()
-        {
-            return $"{RegionId} - {CurrentPath} (Tier {(int)CurrentTier})";
-        }
-    }
-
-    /// <summary>
-    /// Deterministic random number generator for reproducible world generation.
-    /// Uses a simple linear congruential generator (LCG) for consistency across platforms.
-    /// </summary>
-    public class DeterministicRandom
-    {
-        private ulong _seed;
-        private const ulong A = 6364136223846793005UL;
-        private const ulong C = 1442695040888963407UL;
-
-        public DeterministicRandom(ulong seed = 0)
-        {
-            _seed = seed != 0 ? seed : (ulong)Environment.TickCount;
-        }
-
-        /// <summary>
-        /// Returns a random integer in the range [0, max).
-        /// </summary>
-        public int Next(int max)
-        {
-            if (max <= 0)
-                throw new ArgumentException("max must be positive");
-
-            _seed = A * _seed + C;
-            return (int)((_seed >> 33) % (uint)max);
-        }
-
-        /// <summary>
-        /// Returns a random integer in the range [min, max).
-        /// </summary>
-        public int Next(int min, int max)
-        {
-            if (min >= max)
-                throw new ArgumentException("min must be less than max");
-            return min + Next(max - min);
-        }
-
-        /// <summary>
-        /// Returns true with probability p (0.0 to 1.0).
-        /// </summary>
-        public bool Probability(double p)
-        {
-            if (p < 0 || p > 1)
-                throw new ArgumentException("Probability must be between 0 and 1");
-            return Next(10000) < (p * 10000);
-        }
-    }
-
-    /// <summary>
-    /// Encapsulates evolution path assignment logic and tier spreading rules.
-    /// </summary>
-    public class EvolutionRules
-    {
-        /// <summary>
-        /// Get the available paths for a given region.
-        /// </summary>
-        public static List<EvolutionPath> GetPathsForRegion(RegionId regionId)
-        {
-            return regionId switch
+            new EncounterDefinition
             {
-                RegionId.NorthernRealm => new List<EvolutionPath>
+                Id = "BanditAmbush",
+                Name = "Bandit Ambush",
+                Summary = "A group of bandits jumps out from cover and demands your valuables.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => world.Regions[world.Player.CurrentRegion].Definition.Biome != BiomeType.Arcane,
+                Weight = world => 1.0,
+                Options = new List<EncounterOption>
                 {
-                    EvolutionPath.AgeOfRaiders,
-                    EvolutionPath.EternalWinter,
-                    EvolutionPath.Ragnarok,
-                    EvolutionPath.UndeadNorth
-                },
-                RegionId.DarkForest => new List<EvolutionPath>
+                    new EncounterOption { Description = "Fight the bandits.", Execute = world => { world.Regions[world.Player.CurrentRegion].EventBars["BanditPatrol"].AddProgress(12); return new EncounterResult { Message = "Combat ensues. (Bandit Patrol +12)", Success = true, PlayerVisible = true }; } },
+                    new EncounterOption { Description = "Pay them off.", Execute = world => { world.Player.SpendGold(12); world.Regions[world.Player.CurrentRegion].EventBars["BanditPatrol"].AddProgress(3); return new EncounterResult { Message = "You escape by paying tribute. (Bandit Patrol +3)", Success = true, PlayerVisible = true }; } },
+                    new EncounterOption { Description = "Attempt to flee.", Execute = world => new EncounterResult { Message = "You escape the ambush.", Success = true, PlayerVisible = true } }
+                }
+            },
+            new EncounterDefinition
+            {
+                Id = "StrandedMerchant",
+                Name = "Stranded Merchant",
+                Summary = "A trader is stranded after a broken wagon and needs aid.",
+                Difficulty = EncounterDifficulty.Normal,
+                CanOccur = world => true,
+                Weight = world => 0.9,
+                Options = new List<EncounterOption>
                 {
-                    EvolutionPath.PrimordialJungle,
-                    EvolutionPath.CorruptedAbyss,
-                    EvolutionPath.ElvenEnclave,
-                    EvolutionPath.CursedWildlands
-                },
-                RegionId.DesertKingdom => new List<EvolutionPath>
-                {
-                    EvolutionPath.AgeOfMerchants,
-                    EvolutionPath.AgeOfPharaohs,
-                    EvolutionPath.ElementalCatastrophe,
-                    EvolutionPath.ShadowAndSecrets
-                },
-                RegionId.Swamp => new List<EvolutionPath>
-                {
-                    EvolutionPath.PrimordialBog,
-                    EvolutionPath.PlaguePestilence,
-                    EvolutionPath.MonsterDominion,
-                    EvolutionPath.MysticalAwakening
-                },
-                RegionId.Highlands => new List<EvolutionPath>
-                {
-                    EvolutionPath.DwarvenProsperity,
-                    EvolutionPath.AsceticHermitage,
-                    EvolutionPath.DragonRoost,
-                    EvolutionPath.CorruptionBlight
-                },
-                RegionId.InfernalLands => new List<EvolutionPath>
-                {
-                    EvolutionPath.DemonicDominion,
-                    EvolutionPath.VolcanicCatastrophe,
-                    EvolutionPath.DemonicElementalFusion,
-                    EvolutionPath.EternalForge
-                },
-                RegionId.ArcaneEmpire => new List<EvolutionPath>
-                {
-                    EvolutionPath.ArcaneAscendance,
-                    EvolutionPath.KnowledgeHoarding,
-                    EvolutionPath.TechnoMagicalSynthesis,
-                    EvolutionPath.CorruptionDecay
-                },
-                _ => throw new ArgumentException("Unknown region")
-            };
+                    new EncounterOption { Description = "Repair the wagon and help.", Execute = world => { world.Regions[world.Player.CurrentRegion].EventBars["MerchantCaravan"].AddProgress(16); return new EncounterResult { Message = "You repair the wagon! Merchant Caravan activity +16", Success = true, PlayerVisible = true }; } },
+                    new EncounterOption { Description = "Offer to escort them.", Execute = world => { world.Regions[world.Player.CurrentRegion].EventBars["MerchantCaravan"].AddProgress(10); return new EncounterResult { Message = "You guide them safely. Merchant Caravan activity +10.", Success = true, PlayerVisible = true }; } },
+                    new EncounterOption { Description = "Take advantage and steal.", Execute = world => new EncounterResult { Message = "You grab some cargo.", Success = true, PlayerVisible = true } }
+                }
+            }
+        };
+    }
+
+    // ===== CORE ENGINE - WorldState =====
+    public class WorldState
+    {
+        public static WorldState CurrentGlobalState { get; private set; }
+
+        public ulong Seed { get; private set; }
+        public DeterministicRandom Rng { get; private set; }
+        public WorldClock Clock { get; private set; }
+        public Dictionary<RegionId, RegionState> Regions { get; private set; } = new();
+        public PlayerState Player { get; private set; }
+        public EconomyState Economy { get; private set; }
+        public Dictionary<FactionType, FactionState> Factions { get; private set; } = new();
+        public Dictionary<string, ProgressionBarState> ProgressionBars { get; private set; } = new();
+        public List<EncounterDefinition> Encounters { get; private set; } = new();
+        public List<LongTermEventDefinition> LongTermEvents { get; private set; } = new();
+        public List<QuestDefinition> QuestDefinitions { get; private set; } = new();
+        public List<string> SimulationHistory { get; private set; } = new();
+        public bool ShowLogs { get; set; } = true;
+        public bool AutoResolveEncounters { get; set; } = false;
+        public int TicksSinceLastEvolution { get; private set; }
+
+        private NoveltyTracker _noveltyTracker = new();
+
+        public WorldState()
+        {
+            Clock = new WorldClock();
+            Player = new PlayerState { CurrentRegion = RegionId.NorthernRealm, Health = 100, MaxHealth = 100, Gold = SimulationConfig.DefaultStartingGold };
+            Economy = new EconomyState();
         }
 
-
-        //// < OVO JE NEPOTREBNO ZA NASU IMPLEMENTACIJU, JER NEMA VEZE SA EVOLUCIJOM SLEDECIH REGIJA, SAMO ODREDJUJE DISTANCU IZMEDJU REGIJA
-        /// KOJA U SUSTINI NEMA NIKAKAV EFEKAT NITI CE BITI KORISCENA///
-
-
-        /// <summary>
-        /// Calculate distance between two regions (grid-based).
-        /// </summary>
-        public static int CalculateDistance(RegionId from, RegionId to)
+        private void InitializeEconomy()
         {
-            if (from == to)
-                return 0;
-
-            // Simple grid layout (can be customized):
-            // 0=North, 1=Forest, 2=Desert, 3=Swamp, 4=Highlands, 5=Infernal, 6=Arcane
-            // Arrange in a rough circle/hexagon pattern
-            var adjacencies = new Dictionary<RegionId, List<(RegionId, int)>>
+            if (Rng == null) return;
+            
+            foreach (var item in ItemRegistry.AllItems)
             {
-                { RegionId.NorthernRealm, new() { (RegionId.DarkForest, 1), (RegionId.Highlands, 1), (RegionId.ArcaneEmpire, 2) } },
-                { RegionId.DarkForest, new() { (RegionId.NorthernRealm, 1), (RegionId.Swamp, 1), (RegionId.ArcaneEmpire, 1) } },
-                { RegionId.DesertKingdom, new() { (RegionId.Swamp, 1), (RegionId.Highlands, 2), (RegionId.InfernalLands, 2) } },
-                { RegionId.Swamp, new() { (RegionId.DarkForest, 1), (RegionId.DesertKingdom, 1), (RegionId.Highlands, 1) } },
-                { RegionId.Highlands, new() { (RegionId.NorthernRealm, 1), (RegionId.Swamp, 1), (RegionId.DesertKingdom, 2), (RegionId.InfernalLands, 1) } },
-                { RegionId.InfernalLands, new() { (RegionId.Highlands, 1), (RegionId.DesertKingdom, 2), (RegionId.ArcaneEmpire, 2) } },
-                { RegionId.ArcaneEmpire, new() { (RegionId.NorthernRealm, 2), (RegionId.DarkForest, 1), (RegionId.InfernalLands, 2) } }
+                var basePrice = item.BaseValue * (100 + Rng.Next(-20, 20)) / 100.0;
+                Economy.MarketPrices[item.Id] = basePrice;
+            }
+        }
+
+        private void InitializeFactions()
+        {
+            foreach (var faction in FactionRegistry.AllFactions)
+            {
+                Factions[faction.Type] = faction;
+                Player.Reputation[faction.Type] = 0;
+            }
+        }
+
+        private void InitializeRegistries()
+        {
+            Encounters = EncounterRegistry.AllEncounters;
+            LongTermEvents = LongTermEventRegistry.AllEvents;
+            QuestDefinitions = QuestRegistry.AllQuests;
+        }
+
+        public static WorldState CreateCampaign(ulong seed, RegionId startingRegion)
+        {
+            var world = new WorldState
+            {
+                Seed = seed,
+                Rng = new DeterministicRandom(seed)
             };
 
-            // BFS to find shortest distance
-            var queue = new Queue<(RegionId, int)>();
-            var visited = new HashSet<RegionId> { from };
-            queue.Enqueue((from, 0));
+            CurrentGlobalState = world;
+            world.Log(LogCategory.Simulation, $"Campaign seeded with {seed} starting at {startingRegion}");
 
-            while (queue.Count > 0)
+            // Initialize all 7 regions
+            var regionIds = new[] { RegionId.NorthernRealm, RegionId.DarkForest, RegionId.DesertKingdom, RegionId.Swamp, RegionId.Highlands, RegionId.InfernalLands, RegionId.ArcaneEmpire };
+            foreach (var regionId in regionIds)
             {
-                var (current, dist) = queue.Dequeue();
-                if (current == to)
-                    return dist;
+                var tier = world.Rng.Probability(SimulationConfig.StartingTier2Chance) ? WorldTier.Tier2 : WorldTier.Tier1;
+                var definition = WorldDefinitions.GetDefinition(regionId);
+                var regionState = new RegionState(definition, tier, EvolutionPath.None);
 
-                if (adjacencies.ContainsKey(current))
+                // Initialize EventBars from EventBarRegistry
+                foreach (var barDef in EventBarRegistry.AllEventBarDefinitions)
                 {
-                    foreach (var (neighbor, _) in adjacencies[current])
+                    regionState.EventBars[barDef.Id] = new EventBarState(barDef);
+                }
+
+                // Initialize ZoneEvolutionBars
+                if (ZoneEvolutionBarRegistry.BarsByRegion.TryGetValue(regionId, out var zoneBarDefs))
+                {
+                    foreach (var zoneBarDef in zoneBarDefs)
                     {
-                        if (!visited.Contains(neighbor))
-                        {
-                            visited.Add(neighbor);
-                            queue.Enqueue((neighbor, dist + 1));
-                        }
+                        regionState.ZoneEvolutionBars[zoneBarDef.Id] = new ZoneEvolutionBarState(zoneBarDef);
+                    }
+                }
+
+                // Initialize Settlements
+                foreach (var settlementDef in SettlementRegistry.AllSettlements)
+                {
+                    if (settlementDef.Region == regionId)
+                    {
+                        regionState.Settlements[settlementDef.Id] = new SettlementState(settlementDef);
+                    }
+                }
+
+                world.Regions[regionId] = regionState;
+            }
+
+            // Initialize progression bars
+            foreach (var barDef in ProgressionBarRegistry.GlobalBarDefinitions)
+            {
+                world.ProgressionBars[barDef.Id] = new ProgressionBarState(barDef);
+            }
+
+            // Initialize economy, factions, and registries
+            world.InitializeEconomy();
+            world.InitializeFactions();
+            world.InitializeRegistries();
+
+            world.Player.CurrentRegion = startingRegion;
+            return world;
+        }
+
+        public void Log(LogCategory category, string message)
+        {
+            if (ShowLogs)
+                SimulationLog.Log(message, category);
+            SimulationHistory.Add(message);
+        }
+
+        public void AdvanceWorld(int minutes)
+        {
+            Clock.AdvanceByMinutes(minutes);
+            UpdateProgression();
+            UpdateMarketPrices();
+        }
+
+        private void UpdateProgression()
+        {
+            TicksSinceLastEvolution++;
+            foreach (var region in Regions.Values)
+            {
+                foreach (var bar in region.EventBars.Values)
+                {
+                    double oldValue = bar.Value;
+                    bar.ApplyDecay();
+                    if (Math.Abs(oldValue - bar.Value) > 0.01)
+                    {
+                        double progress = (bar.Value / bar.Definition.Threshold) * 100;
+                        Log(LogCategory.Simulation, $"[{region.Definition.Name}] {bar.Definition.Name}: {oldValue:F1} -> {bar.Value:F1} ({progress:F0}% to threshold)");
+                    }
+                    
+                    bar.CheckCompletion();
+                    if (bar.NeedsCompletionProcessing())
+                    {
+                        ProcessEventBarCompletion(bar);
+                        bar.MarkCompletionProcessed();
+                    }
+                }
+                
+                foreach (var zoneBar in region.ZoneEvolutionBars.Values)
+                {
+                    if (zoneBar.ModificationHistory.Count > 0)
+                    {
+                        var lastMod = zoneBar.ModificationHistory.Last();
+                        Log(LogCategory.Simulation, $"[{region.Definition.Name}] {zoneBar.Definition.Name}: {lastMod} (milestone: {zoneBar.CurrentMilestone})");
+                        zoneBar.ModificationHistory.Clear();
                     }
                 }
             }
-
-            return int.MaxValue; // No path found
         }
 
-
-        //// < OVO NIJE KAKO MI ZELIMO DA RADI, NEMA VEZE SA DISTANCOM EVOLUIRANJE SLEDECIH REGIJA, 
-        /// SVE REGIJE EVOLVUJU U ZAVISNOSTI OD IZBORA ETC >
-
-
-
-        /// <summary>
-        /// Simulate tier spread when a region evolves.
-        /// Only some adjacent regions tier up; others remain unchanged.
-        /// </summary>
-        public static Dictionary<RegionId, int> CalculateTierSpread(RegionId clearedRegion, DeterministicRandom rng)
+        private void ProcessEventBarCompletion(EventBarState bar)
         {
-            var tierChanges = new Dictionary<RegionId, int>();
-
-            // All regions except the cleared one
-            foreach (RegionId region in Enum.GetValues(typeof(RegionId)))
+            var definition = bar.Definition;
+            Log(LogCategory.Simulation, $"[COMPLETION] {definition.Name} reached threshold ({bar.Value:F0}/{definition.Threshold})");
+            
+            foreach (var encounterId in definition.OnCompletion.UnlockedEncounterIds)
             {
-                if (region == clearedRegion)
-                    continue;
+                Log(LogCategory.Simulation, $"  → Unlocks encounter: {encounterId}");
+            }
 
-                int distance = CalculateDistance(clearedRegion, region);
+            foreach (var questLineId in definition.OnCompletion.UnlockedQuestLineIds)
+            {
+                Log(LogCategory.Simulation, $"  → Unlocks questline: {questLineId}");
+            }
 
-                // Probability decreases with distance
-                double probability = distance switch
+            foreach (var (settlementId, effectType, amount) in definition.OnCompletion.SettlementModifications)
+            {
+                var region = Regions.Values.FirstOrDefault(r => r.Settlements.ContainsKey(settlementId));
+                if (region?.Settlements.TryGetValue(settlementId, out var settlement) == true)
                 {
-                    1 => 0.60, // Adjacent: 60% chance to tier up
-                    2 => 0.35, // Two steps away: 35% chance
-                    3 => 0.15, // Three steps: 15% chance
-                    _ => 0.05  // Far away: 5% chance
-                };
+                    Log(LogCategory.Simulation, $"  → {settlement.Definition.Name} {effectType}: +{amount}");
+                    if (effectType == "Wealth") settlement.ModifyWealth(amount);
+                    else if (effectType == "Safety") settlement.ModifySafety(amount);
+                    else if (effectType == "MerchantActivity") settlement.ModifyMerchantActivity(amount);
+                }
+            }
+        }
 
-                if (rng.Probability(probability))
+        private void UpdateMarketPrices()
+        {
+            foreach (var itemId in Economy.MarketPrices.Keys.ToList())
+            {
+                var volatility = Rng.Next(-10, 10) / 100.0;
+                Economy.MarketPrices[itemId] *= (1.0 + volatility * SimulationConfig.MarketVolatility);
+            }
+        }
+
+        public void Explore()
+        {
+            Log(LogCategory.Player, "You venture forth into the surrounding land.");
+            AdvanceWorld(SimulationConfig.ExploreMinutes);
+            var encounterRoll = Rng.Probability(SimulationConfig.EncounterChance);
+            if (encounterRoll)
+            {
+                var encounter = RollEncounter();
+                if (encounter != null)
                 {
-                    // Possible tier increases: +1 or +2
-                    tierChanges[region] = rng.Probability(0.7) ? 1 : 2;
+                    Log(LogCategory.Player, $"Encounter: {encounter.Name} - {encounter.Summary}");
+                    PresentEncounter(encounter);
+                    return;
                 }
             }
 
-            return tierChanges;
-        }
-    }
-
-    /// <summary>
-    /// Represents a complete world state and history of one campaign.
-    /// </summary>
-    public class WorldCampaign
-    {
-        public ulong Seed { get; private set; }
-        public RegionId StartingRegion { get; private set; }
-        public List<RegionState> Regions { get; private set; } = new();
-        public List<string> EventLog { get; private set; } = new();
-        public Dictionary<RegionId, List<(WorldTier, EvolutionPath)>> RegionHistory { get; private set; } = new();
-
-        /// <summary>
-        /// Initialize a new campaign with a given seed and starting region.
-        /// </summary>
-        public WorldCampaign(ulong seed, RegionId startingRegion)
-        {
-            Seed = seed;
-            StartingRegion = startingRegion;
-
-            var rng = new DeterministicRandom(seed);
-
-            // Initialize all regions
-            foreach (RegionId region in Enum.GetValues(typeof(RegionId)))
+            // Try to discover a settlement by RNG
+            var region = Regions[Player.CurrentRegion];
+            var undiscoveredSettlements = region.Settlements.Values.Where(s => !s.Discovered).ToList();
+            if (undiscoveredSettlements.Count > 0 && Rng.Probability(0.30))
             {
-                WorldTier tier = region == startingRegion ? WorldTier.Tier1 : WorldTier.Tier2;
-                if (region != startingRegion)
+                var discoveredSettlement = undiscoveredSettlements[Rng.Next(undiscoveredSettlements.Count)];
+                discoveredSettlement.Discover();
+                Log(LogCategory.Player, $"Through your exploration, you discover the settlement of {discoveredSettlement.Definition.Name}! It has been added to your fast travel locations.");
+                return;
+            }
+
+            var discoveryMessage = DiscoverLandmark();
+            Log(LogCategory.Player, discoveryMessage);
+        }
+
+        private string DiscoverLandmark()
+        {
+            var region = Regions[Player.CurrentRegion];
+            if (region.Definition.Biome == BiomeType.Forest && Rng.Probability(0.25))
+                return "You discover an overgrown shrine hidden beneath the trees.";
+            if (region.Definition.Biome == BiomeType.Mountain && Rng.Probability(0.20))
+                return "You find a narrow pass with carvings of an old dragon cult.";
+            if (region.Definition.Biome == BiomeType.Swamp && Rng.Probability(0.20))
+                return "You stumble upon a flooded ruin with strange lights.";
+            if (Rng.Probability(0.15))
+                return "Your exploration reveals a small treasure cache of useful supplies.";
+            return "The landscape shifts subtly as you move; nothing remarkable appears yet.";
+        }
+
+        private EncounterDefinition RollEncounter()
+        {
+            var region = Regions[Player.CurrentRegion];
+            var validEncounters = Encounters.Where(e => e.CanOccur(this)).ToList();
+            if (validEncounters.Count == 0) return null;
+
+            var totalWeight = validEncounters.Sum(e => e.Weight(this));
+            var roll = Rng.NextDouble() * totalWeight;
+            double accumulated = 0;
+
+            foreach (var encounter in validEncounters)
+            {
+                accumulated += encounter.Weight(this);
+                if (roll <= accumulated) return encounter;
+            }
+
+            return validEncounters.LastOrDefault();
+        }
+
+        private void PresentEncounter(EncounterDefinition encounter)
+        {
+            if (!ShowLogs || AutoResolveEncounters)
+            {
+                var autoChoice = encounter.Options[Rng.Next(encounter.Options.Count)];
+                ResolveEncounter(encounter, autoChoice);
+                return;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"--- {encounter.Name} ---");
+            Console.WriteLine(encounter.Summary);
+            for (int i = 0; i < encounter.Options.Count; i++)
+            {
+                Console.WriteLine($"[{i + 1}] {encounter.Options[i].Description}");
+            }
+
+            while (true)
+            {
+                Console.Write("Choose an option: ");
+                var input = Console.ReadLine();
+                if (int.TryParse(input, out var selection) && selection >= 1 && selection <= encounter.Options.Count)
                 {
-                    // Non-starting regions tier up based on distance
-                    int distance = EvolutionRules.CalculateDistance(startingRegion, region);
-                    tier = distance switch
+                    ResolveEncounter(encounter, encounter.Options[selection - 1]);
+                    break;
+                }
+
+                Console.WriteLine("Invalid selection. Please enter the number of your choice.");
+            }
+
+            Console.WriteLine();
+        }
+
+        private void ResolveEncounter(EncounterDefinition encounter, EncounterOption option)
+        {
+            var result = option.Execute(this);
+            Log(LogCategory.Player, result.Message);
+        }
+
+        public void Rest()
+        {
+            var region = Regions[Player.CurrentRegion];
+            var activities = GetAvailableRestActivities(region);
+            Log(LogCategory.Player, "You take time to rest and recover.");
+            foreach (var activity in activities)
+            {
+                Log(LogCategory.Player, $"- {activity}");
+            }
+
+            Player.Heal(SimulationConfig.RestHours * SimulationConfig.RestHealPerHour);
+            Log(LogCategory.Player, $"You restore health to {Player.Health:F0}/{Player.MaxHealth}.");
+            AdvanceWorld(SimulationConfig.RestHours * 60);
+        }
+
+        private List<string> GetAvailableRestActivities(RegionState region)
+        {
+            var activities = new List<string> { "Sleep", "Meditate", "Sharpen weapons" };
+            if (region.Definition.HasWater)
+                activities.Add("Fish");
+            if (region.Definition.HasTown)
+                activities.Add("Visit the tavern");
+            activities.Add("Read a book");
+            return activities;
+        }
+
+        public bool Travel(RegionId destination)
+        {
+            if (!Regions.ContainsKey(destination))
+            {
+                Log(LogCategory.Player, "That destination is not part of your current campaign.");
+                return false;
+            }
+
+            if (destination == Player.CurrentRegion)
+            {
+                Log(LogCategory.Player, "You are already in that region.");
+                return false;
+            }
+
+            var region = Regions[Player.CurrentRegion];
+            Log(LogCategory.Player, $"You prepare to leave {region.Definition.Name}.");
+            Log(LogCategory.Player, "You are about to leave this region. Returning will no longer be possible.");
+
+            string input;
+            if (AutoResolveEncounters)
+            {
+                input = "y";
+            }
+            else
+            {
+                Console.Write("Confirm travel? (y/n): ");
+                input = Console.ReadLine()?.Trim().ToLower();
+            }
+
+            if (input != "y")
+            {
+                Log(LogCategory.Player, "You decide to stay for now.");
+                return false;
+            }
+
+            region.IsLocked = true;
+            Player.CurrentRegion = destination;
+            Log(LogCategory.Player, $"You travel to {Regions[destination].Definition.Name}. It will continue evolving while you were away.");
+            AdvanceWorld(SimulationConfig.ExploreMinutes);
+            return true;
+        }
+
+        public void VisitTown()
+        {
+            var region = Regions[Player.CurrentRegion];
+            var discoveredSettlements = region.Settlements.Values.Where(s => s.Discovered).ToList();
+            
+            if (discoveredSettlements.Count == 0)
+            {
+                Log(LogCategory.Player, "You have not yet discovered any settlements in this region. Explore to find towns!");
+                return;
+            }
+
+            SettlementState selectedSettlement;
+            if (discoveredSettlements.Count == 1)
+            {
+                selectedSettlement = discoveredSettlements[0];
+                Log(LogCategory.Player, $"You fast travel to {selectedSettlement.Definition.Name}.");
+            }
+            else
+            {
+                if (!ShowLogs || AutoResolveEncounters)
+                {
+                    selectedSettlement = discoveredSettlements[Rng.Next(discoveredSettlements.Count)];
+                    Log(LogCategory.Player, $"You fast travel to {selectedSettlement.Definition.Name}.");
+                }
+                else
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("Discovered Settlements:");
+                    for (int i = 0; i < discoveredSettlements.Count; i++)
                     {
-                        1 => WorldTier.Tier2,
-                        2 => WorldTier.Tier3,
-                        _ => WorldTier.Tier4
-                    };
+                        Console.WriteLine($"[{i + 1}] {discoveredSettlements[i].Definition.Name}");
+                    }
+
+                    while (true)
+                    {
+                        Console.Write("Choose destination: ");
+                        var input = Console.ReadLine();
+                        if (int.TryParse(input, out var selection) && selection >= 1 && selection <= discoveredSettlements.Count)
+                        {
+                            selectedSettlement = discoveredSettlements[selection - 1];
+                            Log(LogCategory.Player, $"You fast travel to {selectedSettlement.Definition.Name}.");
+                            break;
+                        }
+
+                        Console.WriteLine("Invalid selection. Please enter a valid settlement number.");
+                    }
+
+                    Console.WriteLine();
                 }
+            }
 
-                // Assign random path for this region
-                var availablePaths = EvolutionRules.GetPathsForRegion(region);
-                EvolutionPath path = availablePaths[rng.Next(availablePaths.Count)];
+            Log(LogCategory.Player, "You arrive in town and listen for rumors.");
+            AdvanceWorld(60);
+            Log(LogCategory.Player, "Merchants haggle openly and faction agents watch for trouble.");
+            Player.AddItem("RumorFragment", 1);
 
-                var regionState = new RegionState(region, tier, path);
-                Regions.Add(regionState);
+            if (ShowLogs && !AutoResolveEncounters)
+                OfferTownQuests();
+            else
+                AutoAcceptTownQuests();
 
-                // Track history
-                RegionHistory[region] = new List<(WorldTier, EvolutionPath)> { (tier, path) };
+            HandleTurnInRequests();
+            CompleteQuestsInTown();
+        }
 
-                EventLog.Add($"[Init] {region} initialized at {tier}, Path: {path}");
+        private void HandleTurnInRequests() { }
+        private void OfferTownQuests() => Log(LogCategory.Player, "The town is quiet today. No new opportunities present themselves.");
+        private void AutoAcceptTownQuests() { }
+
+        public void VisitMarketplace()
+        {
+            var region = Regions[Player.CurrentRegion];
+            var discoveredSettlements = region.Settlements.Values.Where(s => s.Discovered).ToList();
+            
+            if (discoveredSettlements.Count == 0)
+            {
+                Log(LogCategory.Player, "There is no marketplace here. You must discover a settlement first by exploring.");
+                return;
+            }
+
+            var settlement = discoveredSettlements.Count == 1 
+                ? discoveredSettlements[0]
+                : discoveredSettlements[Rng.Next(discoveredSettlements.Count)];
+
+            Log(LogCategory.Player, $"You browse the marketplace in {settlement.Definition.Name}.");
+            AdvanceWorld(45);
+            var item = ItemRegistry.AllItems[Rng.Next(ItemRegistry.AllItems.Count)];
+            var price = Economy.MarketPrices[item.Id];
+            Log(LogCategory.Player, $"A merchant offers {item.Name} for {price:F0} gold.");
+            if (Player.Gold >= price)
+            {
+                Player.SpendGold(price);
+                Player.AddItem(item.Id, 1);
+                Log(LogCategory.Player, $"You purchase {item.Name}.");
+            }
+            else
+            {
+                Log(LogCategory.Player, "You do not have enough gold.");
             }
         }
 
-        /// <summary>
-        /// Simulate clearing a region and advancing the world state.
-        /// </summary>
-        public void ClearRegion(RegionId region)
+        public void InventorySummary()
         {
-            var regionState = Regions.First(r => r.RegionId == region);
-            EventLog.Add($"[Clear] {region} cleared at {regionState.CurrentTier}");
-
-            var rng = new DeterministicRandom(Seed + (ulong)Regions.Count);
-
-
-            ////  MI ZELIMO DA RNG BUDE VISE DETERMINISTICKI NEGO DA BUDE RNG,
-            ///   ZELIMO DA POSTOJE DETERMINISTICKE SITUACIJE KOJE DOPRINOSITI DA SE REGIJA EVOLUIRA NA NEKI NACIN
-            /// TJ DA POVECA SANSU ZA ODREDJENI OUTCOME
-            /// 
-            // Apply tier spread
-            var tierChanges = EvolutionRules.CalculateTierSpread(region, rng);
-
-            foreach (var (affectedRegion, tierIncrease) in tierChanges)
+            Log(LogCategory.Player, $"Gold: {Player.Gold:F0}");
+            if (Player.Inventory.Count == 0)
             {
-                var affectedState = Regions.First(r => r.RegionId == affectedRegion);
-                var oldTier = affectedState.CurrentTier;
-                affectedState.CurrentTier = (WorldTier)Math.Min(5, (int)affectedState.CurrentTier + tierIncrease);
-                EventLog.Add($"[Spread] {affectedRegion}: {oldTier} -> {affectedState.CurrentTier}");
+                Log(LogCategory.Player, "Inventory is empty.");
+                return;
+            }
 
-                // Record history
-                RegionHistory[affectedRegion].Add((affectedState.CurrentTier, affectedState.CurrentPath));
+            foreach (var kvp in Player.Inventory)
+            {
+                var item = ItemRegistry.GetItem(kvp.Key);
+                Log(LogCategory.Player, $"{item.Name}: {kvp.Value}");
+            }
+        }
+
+        public void CharacterSummary()
+        {
+            Log(LogCategory.Player, $"Health: {Player.Health:F0}/{Player.MaxHealth}");
+            Log(LogCategory.Player, "Reputation:");
+            foreach (var rep in Player.Reputation)
+            {
+                Log(LogCategory.Player, $"  {rep.Key}: {rep.Value:F1}");
+            }
+        }
+
+        public void QuestLogSummary() => Log(LogCategory.Player, "No active quests.");
+        public void ReadBook() => Log(LogCategory.Player, "You study an ancient tome and gain wisdom.");
+        public void Fish() => Log(LogCategory.Player, "You fish but catch nothing of value.");
+        public void Camp() => Log(LogCategory.Player, "You camp under the stars and recover strength.");
+        public void Craft() => Log(LogCategory.Player, "You lack the materials to craft anything useful.");
+        public bool TurnInQuest() => false;
+        public bool AcceptQuest() => false;
+        private void CompleteQuestsInTown() { }
+
+        public void PerformAutomaticAction(bool questMode)
+        {
+            var region = Regions[Player.CurrentRegion];
+            var discoveredSettlements = region.Settlements.Values.Where(s => s.Discovered).ToList();
+            var undiscoveredSettlements = region.Settlements.Values.Where(s => !s.Discovered).ToList();
+            
+            // Intelligent action selection based on game state - STAY IN REGION
+            if (Player.Health < Player.MaxHealth * 0.4)
+            {
+                // Low health: prioritize resting
+                Rest();
+            }
+            else if (undiscoveredSettlements.Count > 0 && Rng.Probability(0.4))
+            {
+                // Explore to find settlements (lower weight than before)
+                Explore();
+            }
+            else if (discoveredSettlements.Count > 0 && Rng.Probability(0.3))
+            {
+                // Visit discovered towns occasionally
+                VisitTown();
+            }
+            else
+            {
+                // Default: explore to progress EventBars and trigger encounters
+                Explore();
             }
         }
 
         public override string ToString()
         {
-            return $"Campaign (Seed: {Seed}, Starting: {StartingRegion})\n" +
-                   string.Join("\n", Regions.Select(r => $"  {r}"));
+            var region = Regions[Player.CurrentRegion];
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine();
+            sb.AppendLine($"Time: {Clock.CurrentTime}");
+            sb.AppendLine($"Player Region: {region.Definition.Name}");
+            sb.AppendLine($"Health: {Player.Health:F0}/{Player.MaxHealth}, Gold: {Player.Gold:F0}");
+            sb.AppendLine("Regions:");
+            foreach (var r in Regions.Values)
+            {
+                sb.AppendLine($"  {r.Definition.Name}: {r.CurrentPath} (Tier {(int)r.CurrentTier})");
+            }
+            sb.AppendLine();
+            return sb.ToString();
         }
     }
 
-    /// <summary>
-    /// Tracks novelty metrics across multiple campaigns to measure replayability.
-    /// </summary>
+    public class WorldCampaign
+    {
+        private readonly WorldState _world;
+        public int ActionCount { get; private set; }
+        public WorldState World => _world;
+        public Dictionary<RegionId, RegionState> Regions => _world.Regions;
+        public List<string> EventLog => _world.SimulationHistory;
+
+        public WorldCampaign(WorldState world)
+        {
+            _world = world;
+            ActionCount = 0;
+        }
+
+        public void ExecuteAction(PlayerAction action)
+        {
+            ActionCount++;
+        }
+    }
+
     public class NoveltyTracker
     {
-        public List<WorldCampaign> Campaigns { get; private set; } = new();
+        public List<WorldState> Campaigns { get; private set; } = new();
         public Dictionary<string, int> PathOccurrences { get; private set; } = new();
-        public Dictionary<(RegionId, EvolutionPath), int> RegionPathOccurrences { get; private set; } = new();
 
-        public void AddCampaign(WorldCampaign campaign)
+        public void AddCampaign(WorldState world)
         {
-            Campaigns.Add(campaign);
-
-            foreach (var region in campaign.Regions)
-            {
-                string pathKey = $"{region.RegionId}_{region.CurrentPath}";
-                if (!PathOccurrences.ContainsKey(pathKey))
-                    PathOccurrences[pathKey] = 0;
-                PathOccurrences[pathKey]++;
-
-                var key = (region.RegionId, region.CurrentPath);
-                if (!RegionPathOccurrences.ContainsKey(key))
-                    RegionPathOccurrences[key] = 0;
-                RegionPathOccurrences[key]++;
-            }
+            Campaigns.Add(world);
         }
 
-        /// <summary>
-        /// Calculate novelty score for a new campaign compared to previous campaigns.
-        /// Returns a value 0-1 where 1 = completely novel.
-        /// </summary>
-        public double CalculateNovelty(WorldCampaign newCampaign)
+        public double CalculateNovelty(WorldState world = null)
         {
-            if (Campaigns.Count == 0)
-                return 1.0;
-
-            double noveltyScore = 0;
-            int comparisonCount = 0;
-
-            foreach (var region in newCampaign.Regions)
-            {
-                string pathKey = $"{region.RegionId}_{region.CurrentPath}";
-                int occurrences = PathOccurrences.ContainsKey(pathKey) ? PathOccurrences[pathKey] : 0;
-
-                // Normalized novelty: regions that have appeared rarely are more novel
-                double regionNovelty = 1.0 - (Math.Min(occurrences, Campaigns.Count) / (double)Campaigns.Count);
-                noveltyScore += regionNovelty;
-                comparisonCount++;
-            }
-
-            return comparisonCount > 0 ? noveltyScore / comparisonCount : 1.0;
+            return Campaigns.Count > 0 ? 1.0 / Campaigns.Count : 1.0;
         }
 
-        /// <summary>
-        /// Generate a summary report of novelty metrics.
-        /// </summary>
         public string GenerateReport()
         {
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"=== Novelty Report ({Campaigns.Count} campaigns) ===\n");
-
-            sb.AppendLine("Path Occurrence Distribution:");
-            var sortedPaths = PathOccurrences.OrderByDescending(kvp => kvp.Value);
-            foreach (var (pathKey, count) in sortedPaths)
-            {
-                double frequency = count / (double)Campaigns.Count;
-                sb.AppendLine($"  {pathKey}: {count} occurrences ({frequency:P1})");
-            }
-
-            sb.AppendLine($"\nUnique Paths Generated: {PathOccurrences.Count} / 28 possible");
-
-            // Calculate variance
-            var occurrences = PathOccurrences.Values.ToList();
-            if (occurrences.Count > 0)
-            {
-                double mean = occurrences.Average();
-                double variance = occurrences.Sum(x => Math.Pow(x - mean, 2)) / occurrences.Count;
-                double stdDev = Math.Sqrt(variance);
-                sb.AppendLine($"Occurrence Std Dev: {stdDev:F2} (lower = more balanced)");
-            }
-
-            return sb.ToString();
+            return $"Tracked {Campaigns.Count} campaigns";
         }
     }
 }

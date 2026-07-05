@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ProceduralGame")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+66f97ca00c842bf13dff80e71847da955e59ceca")]
 [assembly: System.Reflection.AssemblyProductAttribute("ProceduralGame")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ProceduralGame")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

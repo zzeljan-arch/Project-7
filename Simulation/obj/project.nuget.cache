@@ -1,12 +1,41 @@
 {
   "version": 2,
-  "dgSpecHash": "oZhSZZMApgTbvcFRki3dDqyM7I9RT5xbmtQ/3DmUVRgJ5VSWaozMynEEZ7twJxDrps5irgYLoNxUTMQSWXgSjg==",
+  "dgSpecHash": "gXMztq6914k=",
   "success": true,
-  "projectFilePath": "F:\\proceduralGame\\Simulation\\ProceduralGameSimulation.csproj",
+  "projectFilePath": "C:\\Users\\ljova\\Desktop\\Project7\\Simulation\\ProceduralGameSimulation.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\tep\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
-    "C:\\Users\\tep\\.nuget\\packages\\system.text.encodings.web\\6.0.0\\system.text.encodings.web.6.0.0.nupkg.sha512",
-    "C:\\Users\\tep\\.nuget\\packages\\system.text.json\\6.0.0\\system.text.json.6.0.0.nupkg.sha512"
+    "C:\\Users\\ljova\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
+    "C:\\Users\\ljova\\.nuget\\packages\\system.text.encodings.web\\8.0.0\\system.text.encodings.web.8.0.0.nupkg.sha512",
+    "C:\\Users\\ljova\\.nuget\\packages\\system.text.json\\8.0.0\\system.text.json.8.0.0.nupkg.sha512",
+    "C:\\Users\\ljova\\.nuget\\packages\\microsoft.netcore.app.ref\\6.0.36\\microsoft.netcore.app.ref.6.0.36.nupkg.sha512",
+    "C:\\Users\\ljova\\.nuget\\packages\\microsoft.windowsdesktop.app.ref\\6.0.36\\microsoft.windowsdesktop.app.ref.6.0.36.nupkg.sha512",
+    "C:\\Users\\ljova\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\6.0.36\\microsoft.aspnetcore.app.ref.6.0.36.nupkg.sha512",
+    "C:\\Users\\ljova\\.nuget\\packages\\microsoft.netcore.app.host.win-x64\\6.0.36\\microsoft.netcore.app.host.win-x64.6.0.36.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "message": "Package 'System.Text.Json' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-8g4q-xg66-9fp4",
+      "projectPath": "C:\\Users\\ljova\\Desktop\\Project7\\Simulation\\ProceduralGameSimulation.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\ljova\\Desktop\\Project7\\Simulation\\ProceduralGameSimulation.csproj",
+      "libraryId": "System.Text.Json",
+      "targetGraphs": [
+        "net6.0"
+      ]
+    },
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "message": "Package 'System.Text.Json' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-hh2w-p6rv-4g7w",
+      "projectPath": "C:\\Users\\ljova\\Desktop\\Project7\\Simulation\\ProceduralGameSimulation.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\ljova\\Desktop\\Project7\\Simulation\\ProceduralGameSimulation.csproj",
+      "libraryId": "System.Text.Json",
+      "targetGraphs": [
+        "net6.0"
+      ]
+    }
+  ]
 }
