@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "1ZtdE48RjGMJf75z3xfbgmUmQiFtXyqNH5Y1aO4gL/98Pqp0iqZzsFayBDzqcEV9dOADkZN7SM+B2UKbQ2prXQ==",
+  "success": true,
+  "projectFilePath": "f:\\MultiMilioner\\GodotProject\\ProceduralGameGodot.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\tep\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
+    "C:\\Users\\tep\\.nuget\\packages\\system.text.encodings.web\\8.0.0\\system.text.encodings.web.8.0.0.nupkg.sha512",
+    "C:\\Users\\tep\\.nuget\\packages\\system.text.json\\8.0.0\\system.text.json.8.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

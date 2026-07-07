@@ -1,0 +1,2 @@
+﻿64820
+f:/Godot_v4.7-stable_mono_win64/Godot_v4.7-stable_mono_win64.exe
