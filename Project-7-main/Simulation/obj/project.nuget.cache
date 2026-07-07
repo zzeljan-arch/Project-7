@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "L6X7p1tTKK1Zn7jdG9S4RwWDc2GyJldfnuEkFOKh7YhPuVaV/DTUYI3/HtzJiwSoDv03ofiJFPmsvi9qYTKtxg==",
+  "success": true,
+  "projectFilePath": "F:\\sufix7\\Project-7-main\\Simulation\\ProceduralGameSimulation.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\tep\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
+    "C:\\Users\\tep\\.nuget\\packages\\system.text.encodings.web\\8.0.0\\system.text.encodings.web.8.0.0.nupkg.sha512",
+    "C:\\Users\\tep\\.nuget\\packages\\system.text.json\\8.0.0\\system.text.json.8.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}
